@@ -27,10 +27,11 @@ export default function Home() {
   const [showFilters, setShowFilters] = useState(false);
   const [showSuggestPanel, setShowSuggestPanel] = useState(false);
   const [suggestDistance, setSuggestDistance] = useState(5);
-  const [avoidFamiliar, setAvoidFamiliar] = useState(true); // true = avoid familiar paths
+  const [avoidFamiliar, setAvoidFamiliar] = useState(true);
   const [selectedStartPoint, setSelectedStartPoint] = useState<[number, number] | null>(null);
   const [isSelectingStartPoint, setIsSelectingStartPoint] = useState(false);
   const [apiKeyMissing, setApiKeyMissing] = useState(false);
+  const [darkMode, setDarkMode] = useState(true); // Dark mode by default
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load routes from localStorage on mount
@@ -51,6 +52,15 @@ export default function Home() {
   useEffect(() => {
     applyFilter(routes, filter);
   }, [filter, routes]);
+
+  // Handle dark mode class on body
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.remove('light-mode');
+    } else {
+      document.documentElement.classList.add('light-mode');
+    }
+  }, [darkMode]);
 
   const applyFilter = (routeList: GPXRoute[], currentFilter: RouteFilter) => {
     let filtered = [...routeList];
@@ -348,28 +358,55 @@ ${gpxPoints}
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0b] text-white">
+    <div className={`min-h-screen ${darkMode ? 'bg-[#0a0a0b]' : 'bg-gray-100'} ${darkMode ? 'text-white' : 'text-gray-900'}`}>
       {/* Header */}
-      <header className="border-b border-zinc-800 bg-[#0a0a0b]/80 backdrop-blur-md sticky top-0 z-50">
+      <header className={`border-b ${darkMode ? 'border-zinc-800 bg-[#0a0a0b]/80' : 'border-gray-200 bg-white/80'} backdrop-blur-md sticky top-0 z-50`}>
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-cyan-600 flex items-center justify-center">
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-cyan-600 flex items-center justify-center hover:scale-105 transition-transform"
+            >
               <svg className="w-6 h-6 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
-            </div>
+            </button>
             <div>
-              <h1 className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-cyan-200 bg-clip-text text-transparent">
+              <button 
+                onClick={() => window.location.reload()}
+                className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-cyan-200 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
+              >
                 GPX Runner
-              </h1>
-              <p className="text-xs text-zinc-500">Visualize your running journey</p>
+              </button>
+              <p className={`text-xs ${darkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Visualize your running journey</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
+            {/* Dark/Light Mode Toggle */}
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className={`p-2 rounded-lg border transition-colors ${
+                darkMode 
+                  ? 'border-zinc-700 text-zinc-400 hover:border-zinc-600' 
+                  : 'border-gray-300 text-gray-600 hover:border-gray-400'
+              }`}
+              title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {darkMode ? (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                </svg>
+              )}
+            </button>
+            
             <button
               onClick={() => setShowSuggestPanel(!showSuggestPanel)}
-              className="px-4 py-2 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-white font-medium rounded-lg transition-all duration-200 flex items-center gap-2"
+              className="px-3 md:px-4 py-2 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-400 hover:to-pink-500 text-white font-medium rounded-lg transition-all duration-200 flex items-center gap-2"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
@@ -523,9 +560,9 @@ ${gpxPoints}
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 py-6 flex gap-6">
-        {/* Sidebar */}
-        <aside className="w-80 flex-shrink-0 space-y-4">
+      <main className="max-w-7xl mx-auto px-4 py-4 md:py-6 flex flex-col md:flex-row gap-4 md:gap-6">
+        {/* Sidebar - scrollable independently */}
+        <aside className="w-full md:w-80 flex-shrink-0 space-y-4 overflow-y-auto max-h-[40vh] md:max-h-[calc(100vh-200px)]">
           {/* Stats Card */}
           {stats && (
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 animate-fade-in">
@@ -551,41 +588,7 @@ ${gpxPoints}
             </div>
           )}
 
-          {/* Suggested Route */}
-          {suggestedRoute && (
-            <div className="bg-gradient-to-br from-pink-500/10 to-cyan-500/10 border border-pink-500/30 rounded-2xl p-4 animate-fade-in">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="font-medium text-pink-400">Suggested Route</h2>
-                <button
-                  onClick={discardSuggestion}
-                  className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
-                  title="Discard"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <div className="mb-3">
-                <h3 className="font-medium">{suggestedRoute.name}</h3>
-                <div className="flex gap-4 mt-1 text-sm text-zinc-400">
-                  <span>{(suggestedRoute.distance / 1000).toFixed(1)} km</span>
-                  <span>↑{Math.round(suggestedRoute.elevationGain)}m</span>
-                </div>
-              </div>
-              <button
-                onClick={() => downloadGPX(suggestedRoute)}
-                className="w-full py-2 bg-pink-500 hover:bg-pink-400 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download GPX
-              </button>
-            </div>
-          )}
-
-          {/* Routes List */}
+          {/* Routes List - only show uploaded routes, not suggested */}
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
             <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
               <h2 className="font-medium">Your Routes</h2>
@@ -663,8 +666,8 @@ ${gpxPoints}
           )}
         </aside>
 
-        {/* Map */}
-        <div className="flex-1 flex flex-col">
+        {/* Map - takes remaining space */}
+        <div className="flex-1 flex flex-col min-h-[50vh] md:min-h-0">
           {/* Suggested Route Info Panel */}
           {suggestedRoute && (
             <div className="mb-4 p-4 bg-gradient-to-r from-pink-500/10 to-violet-500/10 border border-pink-500/30 rounded-xl">
@@ -702,7 +705,7 @@ ${gpxPoints}
             </div>
           )}
           
-          <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+          <div className={`flex-1 ${darkMode ? 'bg-zinc-900' : 'bg-gray-200'} border ${darkMode ? 'border-zinc-800' : 'border-gray-300'} rounded-2xl overflow-hidden`}>
             {routes.length > 0 || suggestedRoute ? (
               <MapWithNoSSR
                 routes={suggestedRoute ? [] : getDisplayRoutes()}
@@ -712,6 +715,7 @@ ${gpxPoints}
                 selectedStartPoint={selectedStartPoint}
                 onMapClick={handleMapClick}
                 isSelectingStartPoint={isSelectingStartPoint}
+                darkMode={darkMode}
               />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500">

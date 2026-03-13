@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect } from "react";
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import { GPXRoute, RouteSuggestion } from "@/app/types";
@@ -13,6 +13,7 @@ interface MapProps {
   selectedStartPoint?: [number, number] | null;
   onMapClick?: (lat: number, lon: number) => void;
   isSelectingStartPoint?: boolean;
+  darkMode?: boolean;
 }
 
 function MapEvents({ onMapClick }: { onMapClick?: (lat: number, lon: number) => void }) {
@@ -55,6 +56,41 @@ function MapController({ routes, selectedRoute, suggestedRoute }: {
   return null;
 }
 
+// Calculate distance between two points in km
+function calcDistance(coord1: [number, number], coord2: [number, number]): number {
+  const R = 6371;
+  const dLat = (coord2[1] - coord1[1]) * Math.PI / 180;
+  const dLon = (coord2[0] - coord1[0]) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(coord1[1] * Math.PI / 180) * Math.cos(coord2[1] * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// Get kilometer markers for a route
+function getKilometerMarkers(coordinates: [number, number][]): { position: [number, number]; km: number }[] {
+  const markers: { position: [number, number]; km: number }[] = [];
+  let totalDistance = 0;
+  let lastKm = 0;
+  
+  for (let i = 1; i < coordinates.length; i++) {
+    const dist = calcDistance(coordinates[i-1], coordinates[i]);
+    totalDistance += dist;
+    
+    const currentKm = Math.floor(totalDistance);
+    if (currentKm > lastKm && currentKm <= 50) { // Show up to 50km markers
+      markers.push({
+        position: coordinates[i],
+        km: currentKm
+      });
+      lastKm = currentKm;
+    }
+  }
+  
+  return markers;
+}
+
 export default function Map({ 
   routes, 
   selectedRoute, 
@@ -62,7 +98,8 @@ export default function Map({
   suggestedRoute, 
   selectedStartPoint,
   onMapClick,
-  isSelectingStartPoint
+  isSelectingStartPoint,
+  darkMode = true
 }: MapProps) {
   const getCenter = () => {
     if (suggestedRoute && suggestedRoute.coordinates.length > 0) {
@@ -94,11 +131,35 @@ export default function Map({
     }));
   };
 
-  // Create a custom icon for the start point
+  // Get selected route or suggested route for kilometer markers
+  const activeRouteCoords = selectedRoute?.coordinates || suggestedRoute?.coordinates || [];
+  const kmMarkers = getKilometerMarkers(activeRouteCoords);
+
+  // Create kilometer marker icon
+  const kmMarkerIcon = (km: number) => L.divIcon({
+    html: `<div style="
+      background: ${darkMode ? '#18181b' : '#ffffff'};
+      border: 2px solid ${darkMode ? '#22d3ee' : '#0891b2'};
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: bold;
+      color: ${darkMode ? '#22d3ee' : '#0891b2'};
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    ">${km}</div>`,
+    className: '',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+
   const startPointIcon = L.divIcon({
     html: `<div style="
       background: #22d3ee;
-      border: 3px solid #0a0a0b;
+      border: 3px solid ${darkMode ? '#0a0a0b' : '#ffffff'};
       border-radius: 50%;
       width: 30px;
       height: 30px;
@@ -117,13 +178,16 @@ export default function Map({
     <MapContainer
       center={getCenter()}
       zoom={13}
-      style={{ height: "100%", width: "100%", background: "#111113" }}
+      style={{ height: "100%", width: "100%", background: darkMode ? "#111113" : "#f4f4f5" }}
       zoomControl={true}
       dragging={!isSelectingStartPoint}
     >
       <TileLayer
         attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        url={darkMode 
+          ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+        }
       />
       
       <MapController routes={routes} selectedRoute={selectedRoute} suggestedRoute={suggestedRoute ?? null} />
@@ -134,11 +198,20 @@ export default function Map({
       {/* Draw selected start point marker */}
       {selectedStartPoint && (
         <Marker position={[selectedStartPoint[1], selectedStartPoint[0]]} icon={startPointIcon}>
-          <Popup>
-            Start/End Point
-          </Popup>
+          <Popup>Start/End Point</Popup>
         </Marker>
       )}
+
+      {/* Draw kilometer markers for selected/suggested route */}
+      {kmMarkers.map((marker, idx) => (
+        <Marker 
+          key={idx} 
+          position={[marker.position[1], marker.position[0]]} 
+          icon={kmMarkerIcon(marker.km)}
+        >
+          <Popup>{marker.km} km</Popup>
+        </Marker>
+      ))}
 
       {/* Draw suggested route */}
       {suggestedRoute && suggestedRoute.coordinates.length > 0 && (

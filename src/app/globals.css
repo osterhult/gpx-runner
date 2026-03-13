@@ -19,6 +19,21 @@
   --border-hover: #3f3f46;
 }
 
+.light-mode {
+  --bg-primary: #fafafa;
+  --bg-secondary: #f4f4f5;
+  --bg-tertiary: #e4e4e7;
+  --bg-card: #ffffff;
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #a1a1aa;
+  --accent: #0891b2;
+  --accent-glow: rgba(8, 145, 178, 0.1);
+  --accent-secondary: #db2777;
+  --border: #d4d4d8;
+  --border-hover: #a1a1aa;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -30,6 +45,7 @@ html, body {
   background: var(--bg-primary);
   color: var(--text-primary);
   font-family: 'Outfit', sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Custom scrollbar */
@@ -57,6 +73,10 @@ html, body {
   font-family: 'Outfit', sans-serif !important;
 }
 
+.light-mode .leaflet-container {
+  background: #f4f4f5 !important;
+}
+
 .leaflet-control-zoom a {
   background: var(--bg-card) !important;
   color: var(--text-primary) !important;
@@ -71,6 +91,10 @@ html, body {
 .leaflet-control-attribution {
   background: rgba(10, 10, 11, 0.8) !important;
   color: var(--text-muted) !important;
+}
+
+.light-mode .leaflet-control-attribution {
+  background: rgba(250, 250, 250, 0.9) !important;
 }
 
 .leaflet-control-attribution a {
@@ -125,3 +149,16 @@ html, body {
 .animation-delay-300 { animation-delay: 300ms; }
 .animation-delay-400 { animation-delay: 400ms; }
 .animation-delay-500 { animation-delay: 500ms; }
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100% !important;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+  
+  .map-container {
+    height: 60vh !important;
+  }
+}
