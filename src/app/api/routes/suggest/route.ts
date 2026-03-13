@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 
-// Using OSRM (Open Source Routing Machine) - free, no API key needed
 const OSRM_BASE = 'https://router.project-osrm.org';
 
 interface SuggestionRequest {
@@ -14,29 +13,24 @@ interface SuggestionRequest {
 export async function POST(request: NextRequest) {
   try {
     const body: SuggestionRequest = await request.json();
-    const { distance, type, centerLat, centerLon } = body;
+    const { distance, centerLat, centerLon } = body;
 
-    // Convert km to meters for OSRM
     const targetDistanceMeters = distance * 1000;
     
-    // Generate random start point within reasonable distance of center
-    const radiusKm = 2;
+    // Generate random start point
+    const radiusKm = 1.5;
     const startLat = centerLat + (Math.random() - 0.5) * (radiusKm / 111);
     const startLon = centerLon + (Math.random() - 0.5) * (radiusKm / 111);
 
-    // Calculate approximate end point to get roughly the right distance
+    // Calculate waypoint that's roughly half the distance away (to create an out-and-back)
     const angle = Math.random() * 2 * Math.PI;
-    const distanceRatio = 0.5 + Math.random() * 0.5;
-    const endDistanceKm = distance * distanceRatio;
-    
-    const endLat = startLat + (Math.sin(angle) * endDistanceKm / 111);
-    const endLon = startLon + (Math.cos(angle) * endDistanceKm / 111);
+    const waypointDistanceKm = distance * 0.5;
+    const waypointLat = startLat + (Math.sin(angle) * waypointDistanceKm / 111);
+    const waypointLon = startLon + (Math.cos(angle) * waypointDistanceKm / 111);
 
-    // Use OSRM route API
-    const profile = type === 'road' ? 'foot' : 'foot';
-    
+    // Get route from start to waypoint
     const response = await axios.get(
-      `${OSRM_BASE}/route/v1/${profile}/${startLon},${startLat};${endLon},${endLat}`,
+      `${OSRM_BASE}/route/v1/foot/${startLon},${startLat};${waypointLon},${waypointLat}`,
       {
         params: {
           overview: 'full',
@@ -49,33 +43,43 @@ export async function POST(request: NextRequest) {
 
     if (response.data.code !== 'Ok' || !response.data.routes || response.data.routes.length === 0) {
       return NextResponse.json(
-        { error: 'No route found for these points. Try a different location.' },
+        { error: 'No route found. Try a different location.' },
         { status: 404 }
       );
     }
 
-    const route = response.data.routes[0];
-    const coords = route.geometry.coordinates.map((c: number[]) => [c[0], c[1]] as [number, number]);
-    const routeDistance = route.distance;
-    const routeElevation = 0; // OSRM doesn't provide elevation in basic response
+    const outboundRoute = response.data.routes[0];
+    const outboundCoords = outboundRoute.geometry.coordinates.map((c: number[]) => [c[0], c[1]] as [number, number]);
+    const halfDistance = outboundRoute.distance;
+    
+    // Create loop by reversing and appending the route
+    const returnCoords = [...outboundCoords].reverse();
+    // Remove the last point (it's the same as the waypoint)
+    returnCoords.pop();
+    const fullCoords = [...outboundCoords, ...returnCoords];
+    
+    // Calculate actual total distance (there and back)
+    const totalDistance = halfDistance * 2;
+    
+    // Estimate elevation gain (rough approximation: 10m per km for flat terrain)
+    const estimatedElevation = Math.round(distance * 10);
 
-    // Generate route name
     const routeNames = [
-      'Morning Explorer',
-      'Sunset Trail',
-      'Urban Loop',
-      'Nature Path',
-      'City Runner',
+      'Morning Loop',
+      'Evening Run',
       'Park Circuit',
-      'Trail Blazer',
-      'Road Runner',
+      'Urban Loop',
+      'Nature Trail',
+      'City Route',
+      'Sunset Run',
+      'Quick Loop',
     ];
     const name = routeNames[Math.floor(Math.random() * routeNames.length)];
 
     return NextResponse.json({
-      coordinates: coords,
-      distance: routeDistance,
-      elevationGain: routeElevation,
+      coordinates: fullCoords,
+      distance: totalDistance,
+      elevationGain: estimatedElevation,
       name: `${name} - ${distance}km`,
     });
 
@@ -90,7 +94,7 @@ export async function POST(request: NextRequest) {
     }
     
     return NextResponse.json(
-      { error: 'Failed to generate route suggestion. Please try again.' },
+      { error: 'Failed to generate route. Please try again.' },
       { status: 500 }
     );
   }

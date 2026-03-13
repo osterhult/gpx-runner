@@ -23,7 +23,7 @@ export default function Home() {
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [stats, setStats] = useState<RouteStats | null>(null);
-  const [filter, setFilter] = useState<RouteFilter>({ type: 'all' });
+  const [filter, setFilter] = useState<RouteFilter>({});
   const [showFilters, setShowFilters] = useState(false);
   const [showSuggestPanel, setShowSuggestPanel] = useState(false);
   const [suggestDistance, setSuggestDistance] = useState(5);
@@ -67,9 +67,10 @@ export default function Home() {
     }
 
     // Filter by type
-    if (currentFilter.type && currentFilter.type !== 'all') {
-      filtered = filtered.filter(r => r.type === currentFilter.type);
-    }
+    // Filter by type - removed since we can't detect road vs trail
+    // if (currentFilter.type && currentFilter.type !== 'all') {
+    //   filtered = filtered.filter(r => r.type === currentFilter.type);
+    // }
 
     setFilteredRoutes(filtered);
     calculateStats(filtered);
@@ -157,9 +158,6 @@ export default function Home() {
         const nameEl = xml.querySelector("name");
         const name = nameEl?.textContent || file.name.replace(".gpx", "");
 
-        // Auto-detect type based on elevation change and average speed
-        const type = detectRouteType(coordinates, elevationGain, distance);
-
         newRoutes.push({
           id: `route-${Date.now()}-${i}`,
           name,
@@ -168,7 +166,6 @@ export default function Home() {
           distance,
           elevationGain,
           color: getRandomColor(),
-          type,
         });
       }
 
@@ -187,14 +184,6 @@ export default function Home() {
         fileInputRef.current.value = "";
       }
     }
-  };
-
-  const detectRouteType = (coordinates: [number, number][], elevationGain: number, distance: number): 'road' | 'trail' | 'mixed' => {
-    // Simple heuristic: high elevation gain per km = trail
-    const elevationPerKm = (elevationGain / distance) * 1000;
-    if (elevationPerKm > 50) return 'trail';
-    if (elevationPerKm > 20) return 'mixed';
-    return 'road';
   };
 
   const haversine = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -224,6 +213,36 @@ export default function Home() {
     if (selectedRoute?.id === id) {
       setSelectedRoute(null);
     }
+  };
+
+  const discardSuggestion = () => {
+    setSuggestedRoute(null);
+  };
+
+  const downloadGPX = (route: { coordinates: [number, number][]; name: string; distance: number; elevationGain: number }) => {
+    // Convert coordinates to GPX format
+    const gpxPoints = route.coordinates.map(([lon, lat]) => `    <trkpt lat="${lat}" lon="${lon}"></trkpt>`).join('\n');
+    
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="GPX Runner">
+  <trk>
+    <name>${route.name}</name>
+    <trkseg>
+${gpxPoints}
+    </trkseg>
+  </trk>
+</gpx>`;
+
+    // Download the file
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${route.name.replace(/\s+/g, '_')}.gpx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const getSuggestion = async () => {
@@ -330,7 +349,7 @@ export default function Home() {
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`px-4 py-2 border rounded-lg transition-all duration-200 flex items-center gap-2 ${
-                showFilters || filter.type !== 'all' || filter.month
+                showFilters || filter.month
                   ? "border-cyan-500 bg-cyan-500/10 text-cyan-400"
                   : "border-zinc-700 text-zinc-400 hover:border-zinc-600"
               }`}
@@ -420,19 +439,7 @@ export default function Home() {
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-zinc-400">Type:</label>
-              <select
-                value={filter.type}
-                onChange={(e) => setFilter({ ...filter, type: e.target.value as any })}
-                className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white"
-              >
-                <option value="all">All types</option>
-                <option value="road">Road</option>
-                <option value="trail">Trail</option>
-                <option value="mixed">Mixed</option>
-              </select>
-            </div>
+
             <div className="flex items-center gap-2">
               <label className="text-sm text-zinc-400">Distance:</label>
               <input
@@ -452,7 +459,7 @@ export default function Home() {
               />
             </div>
             <button
-              onClick={() => setFilter({ type: 'all' })}
+              onClick={() => setFilter({})}
               className="px-3 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
             >
               Clear filters
@@ -486,6 +493,40 @@ export default function Home() {
                   <div className="text-xs text-zinc-500">time</div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Suggested Route */}
+          {suggestedRoute && (
+            <div className="bg-gradient-to-br from-pink-500/10 to-cyan-500/10 border border-pink-500/30 rounded-2xl p-4 animate-fade-in">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-medium text-pink-400">Suggested Route</h2>
+                <button
+                  onClick={discardSuggestion}
+                  className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                  title="Discard"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="mb-3">
+                <h3 className="font-medium">{suggestedRoute.name}</h3>
+                <div className="flex gap-4 mt-1 text-sm text-zinc-400">
+                  <span>{(suggestedRoute.distance / 1000).toFixed(1)} km</span>
+                  <span>↑{Math.round(suggestedRoute.elevationGain)}m</span>
+                </div>
+              </div>
+              <button
+                onClick={() => downloadGPX(suggestedRoute)}
+                className="w-full py-2 bg-pink-500 hover:bg-pink-400 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download GPX
+              </button>
             </div>
           )}
 
@@ -541,13 +582,6 @@ export default function Home() {
                     <div className="flex gap-3 mt-2 text-xs text-zinc-500">
                       <span>{(route.distance / 1000).toFixed(1)} km</span>
                       <span>↑{Math.round(route.elevationGain)}m</span>
-                      <span className={`px-1.5 py-0.5 rounded ${
-                        route.type === 'road' ? 'bg-blue-500/20 text-blue-400' :
-                        route.type === 'trail' ? 'bg-green-500/20 text-green-400' :
-                        'bg-amber-500/20 text-amber-400'
-                      }`}>
-                        {route.type}
-                      </span>
                     </div>
                   </div>
                 ))}
@@ -575,8 +609,40 @@ export default function Home() {
         </aside>
 
         {/* Map */}
-        <div className="flex-1">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden" style={{ height: "calc(100vh - 280px)" }}>
+        <div className="flex-1 flex flex-col">
+          {/* Suggested Route Info Panel */}
+          {suggestedRoute && (
+            <div className="mb-4 p-4 bg-gradient-to-r from-pink-500/10 to-violet-500/10 border border-pink-500/30 rounded-xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-pink-400">{suggestedRoute.name}</h3>
+                  <div className="flex gap-4 mt-1 text-sm text-zinc-400">
+                    <span>📏 {(suggestedRoute.distance / 1000).toFixed(1)} km</span>
+                    <span>⬆️ {suggestedRoute.elevationGain}m elevation</span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => downloadGPX(suggestedRoute)}
+                    className="px-3 py-2 bg-pink-500 hover:bg-pink-400 text-white text-sm rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download GPX
+                  </button>
+                  <button
+                    onClick={discardSuggestion}
+                    className="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-white text-sm rounded-lg transition-colors"
+                  >
+                    Discard
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
             {routes.length > 0 || suggestedRoute ? (
               <MapWithNoSSR
                 routes={suggestedRoute ? [] : getDisplayRoutes()}

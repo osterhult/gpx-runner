@@ -7,7 +7,6 @@ export interface GPXRoute {
   elevationGain: number; // meters
   duration?: number; // minutes
   color: string;
-  type: 'road' | 'trail' | 'mixed';
 }
 
 export interface RouteStats {
@@ -21,7 +20,6 @@ export interface RouteFilter {
   month?: string; // YYYY-MM
   minDistance?: number; // km
   maxDistance?: number; // km
-  type?: 'road' | 'trail' | 'mixed' | 'all';
 }
 
 export interface RouteSuggestionRequest {
