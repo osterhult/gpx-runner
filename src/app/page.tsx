@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
+import { ref, uploadBytes, getDownloadURL, listAll } from "firebase/storage";
 import { GPXRoute, RouteStats, RouteFilter, RouteSuggestion } from "./types";
+import { storage } from "@/lib/firebase";
 
 // Dynamically import Map to avoid SSR issues
 const MapWithNoSSR = dynamic(() => import("@/components/Map"), {
@@ -120,6 +122,19 @@ export default function Home() {
     });
   };
 
+  // Upload GPX file to Firebase Storage
+  const uploadToFirebase = async (file: File, routeId: string) => {
+    try {
+      const storageRef = ref(storage, `gpx-files/${routeId}.gpx`);
+      await uploadBytes(storageRef, file);
+      const downloadUrl = await getDownloadURL(storageRef);
+      return downloadUrl;
+    } catch (error) {
+      console.error("Firebase upload error:", error);
+      return null;
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -131,6 +146,12 @@ export default function Home() {
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        const routeId = `route-${Date.now()}-${i}`;
+        
+        // Upload to Firebase Storage
+        const firebaseUrl = await uploadToFirebase(file, routeId);
+        console.log("Uploaded to Firebase:", firebaseUrl);
+        
         const text = await file.text();
         
         const parser = new DOMParser();
