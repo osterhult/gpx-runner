@@ -4,19 +4,19 @@ import axios from 'axios';
 const OSRM_BASE = 'https://router.project-osrm.org';
 
 function calculateFamiliarity(routeCoords: [number, number][], existingRoutes: { coordinates: [number, number][] }[]): number {
-  if (existingRoutes.length === 0) return 0;
+  if (existingRoutes.length === 0 || routeCoords.length === 0) return 0;
   
   const familiarCoords = new Set<string>();
   existingRoutes.forEach(route => {
     route.coordinates.forEach(coord => {
-      const key = `${coord[0].toFixed(4)},${coord[1].toFixed(4)}`;
+      const key = `${coord[0].toFixed(3)},${coord[1].toFixed(3)}`;
       familiarCoords.add(key);
     });
   });
   
   let familiarPoints = 0;
   routeCoords.forEach(coord => {
-    const key = `${coord[0].toFixed(4)},${coord[1].toFixed(4)}`;
+    const key = `${coord[0].toFixed(3)},${coord[1].toFixed(3)}`;
     if (familiarCoords.has(key)) familiarPoints++;
   });
   
@@ -39,34 +39,48 @@ export async function POST(request: NextRequest) {
     // Target distance in meters
     const targetMeters = distance * 1000;
     
-    // Calculate a point roughly half the target distance away
-    // Using ~0.009 degrees per km approximation
-    const halfDistanceKm = distance / 2;
-    const angle = Math.random() * 2 * Math.PI;
+    // Calculate waypoints in a rough circle
+    // For a circular route, we need to go around, not just out and back
+    const numPoints = 5; // start + 3 waypoints + end (which is same as start)
+    const radiusKm = targetMeters / 1000 / (2 * Math.PI); // Approximate radius for circle
     
-    // Calculate waypoint at half the distance
-    const waypointLat = centerLat + Math.sin(angle) * halfDistanceKm * 0.009;
-    const waypointLon = centerLon + Math.cos(angle) * halfDistanceKm * 0.009;
-
-    // If familiar mode, find a waypoint near existing routes
+    // Add some randomness to make it not always a perfect circle
+    const radiusDegrees = radiusKm * 0.009 * (0.9 + Math.random() * 0.2);
+    
+    // Generate waypoints at different angles to form a more circular route
+    const waypoints: [number, number][] = [];
+    const angles = [];
+    
+    // Create waypoints at angles: 45°, 90°, 135°, etc. (roughly going around)
+    for (let i = 1; i < numPoints; i++) {
+      const angle = (i / (numPoints - 1)) * Math.PI * 1.5 + (Math.random() - 0.5) * 0.3;
+      angles.push(angle);
+      
+      const lat = centerLat + Math.sin(angle) * radiusDegrees;
+      const lon = centerLon + Math.cos(angle) * radiusDegrees;
+      waypoints.push([lon, lat]);
+    }
+    
+    // If familiar mode, find waypoints near existing routes
     if (!avoidFamiliar && existingRoutes && existingRoutes.length > 0) {
       const allCoords = existingRoutes.flatMap(r => r.coordinates);
       if (allCoords.length > 0) {
-        // Find a point from existing routes that's at roughly half our target distance
+        // Find points from existing routes
         const relevantPoints = allCoords.filter(c => {
           const d = Math.sqrt(
             Math.pow(c[1] - centerLat, 2) + 
             Math.pow(c[0] - centerLon, 2)
           ) * 111;
-          return d >= halfDistanceKm * 0.5 && d <= halfDistanceKm * 1.5;
+          return d >= radiusKm * 0.5 && d <= radiusKm * 1.5;
         });
         
-        if (relevantPoints.length > 0) {
-          const selectedPoint = relevantPoints[Math.floor(Math.random() * relevantPoints.length)];
-          // Return a simple round trip to that point
+        if (relevantPoints.length >= 2) {
+          // Use 2-3 points from existing routes as waypoints
+          const selectedPoints = relevantPoints.slice(0, Math.min(3, relevantPoints.length));
+          
           const routeCoords: [number, number][] = [
             [centerLon, centerLat],
-            [selectedPoint[0], selectedPoint[1]],
+            ...selectedPoints.map(p => [p[0], p[1]] as [number, number]),
             [centerLon, centerLat]
           ];
           
@@ -85,8 +99,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Simple round trip: start -> waypoint -> start
-    const coordString = `${centerLon},${centerLat};${waypointLon},${waypointLat};${centerLon},${centerLat}`;
+    // Build route with multiple waypoints for circular path
+    const allWaypoints = [...waypoints, [centerLon, centerLat]]; // Return to start
+    const coordString = `${centerLon},${centerLat};` + waypoints.map(w => `${w[0]},${w[1]}`).join(';') + `;${centerLon},${centerLat}`;
     
     const response = await axios.get(
       `${OSRM_BASE}/route/v1/foot/${coordString}`,
@@ -96,15 +111,19 @@ export async function POST(request: NextRequest) {
           geometries: 'geojson',
           steps: 'false',
         },
-        timeout: 15000,
+        timeout: 20000,
       }
     );
 
     if (response.data.code !== 'Ok' || !response.data.routes || response.data.routes.length === 0) {
-      // Fallback: just return a simple route manually
+      // Fallback to simple out-and-back if circular fails
+      const halfAngle = Math.PI;
+      const halfLat = centerLat + Math.sin(halfAngle) * radiusDegrees;
+      const halfLon = centerLon + Math.cos(halfAngle) * radiusDegrees;
+      
       const fallbackCoords: [number, number][] = [
         [centerLon, centerLat],
-        [waypointLon, waypointLat],
+        [halfLon, halfLat],
         [centerLon, centerLat]
       ];
       
@@ -124,12 +143,16 @@ export async function POST(request: NextRequest) {
     const routeDistance = route.distance;
     const familiarity = existingRoutes ? calculateFamiliarity(coords, existingRoutes) : 0;
     
-    // Verify we got a valid route (not garbage)
-    if (coords.length < 10 || routeDistance < targetMeters * 0.5 || routeDistance > targetMeters * 2) {
+    // Verify route is reasonable
+    if (coords.length < 5 || routeDistance < targetMeters * 0.3 || routeDistance > targetMeters * 3) {
       // Return fallback
+      const halfAngle = Math.PI;
+      const halfLat = centerLat + Math.sin(halfAngle) * radiusDegrees;
+      const halfLon = centerLon + Math.cos(halfAngle) * radiusDegrees;
+      
       const fallbackCoords: [number, number][] = [
         [centerLon, centerLat],
-        [waypointLon, waypointLat],
+        [halfLon, halfLat],
         [centerLon, centerLat]
       ];
       
@@ -147,7 +170,7 @@ export async function POST(request: NextRequest) {
     const routeNames = [
       'Morning Loop', 'Evening Run', 'Park Circuit', 'Urban Loop',
       'Nature Trail', 'City Route', 'Sunset Run', 'Quick Loop',
-      'Round Route', 'Neighborhood Loop',
+      'Round Route', 'Neighborhood Loop', 'Circle Run', 'Circuit',
     ];
 
     return NextResponse.json({

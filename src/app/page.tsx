@@ -444,9 +444,9 @@ ${gpxPoints}
         </div>
       </header>
 
-      {/* Suggest Route Panel - sticky when open */}
+      {/* Suggest Route Panel */}
       {showSuggestPanel && (
-        <div className="sticky top-[73px] z-40 border-b border-zinc-800 bg-zinc-900/95 backdrop-blur-md p-4 animate-fade-in shadow-lg">
+        <div className="border-b border-zinc-800 bg-zinc-900/95 p-4">
           <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <label className="text-sm text-zinc-400">Distance:</label>
@@ -516,7 +516,7 @@ ${gpxPoints}
 
       {/* Filters Panel */}
       {showFilters && (
-        <div className="border-b border-zinc-800 bg-zinc-900/50 p-4 animate-fade-in">
+        <div className="border-b border-zinc-800 bg-zinc-900/95 p-4">
           <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <label className="text-sm text-zinc-400">Month:</label>
@@ -668,8 +668,8 @@ ${gpxPoints}
           )}
         </aside>
 
-        {/* Map - takes remaining space, doesn't shrink */}
-        <div className="flex-1 flex flex-col min-h-[300px] md:min-h-0 flex-shrink-0">
+        {/* Map - fixed height, doesn't shrink */}
+        <div className="flex-1 flex flex-col h-[500px] md:h-auto md:min-h-[600px] flex-shrink-0">
           {/* Suggested Route Info Panel */}
           {suggestedRoute && (
             <div className="mb-4 p-4 bg-gradient-to-r from-pink-500/10 to-violet-500/10 border border-pink-500/30 rounded-xl">
