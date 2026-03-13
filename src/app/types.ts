@@ -28,6 +28,7 @@ export interface RouteSuggestionRequest {
   avoidFamiliar: boolean;
   centerLat: number;
   centerLon: number;
+  existingRoutes?: { coordinates: [number, number][] }[];
 }
 
 export interface RouteSuggestion {
@@ -36,4 +37,6 @@ export interface RouteSuggestion {
   elevationGain: number;
   name: string;
   startPoint?: [number, number]; // [lon, lat]
+  isRoundTrip?: boolean;
+  familiarityScore?: number; // 0-100 percentage
 }

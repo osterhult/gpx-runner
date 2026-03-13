@@ -222,11 +222,23 @@ export default function Home() {
   };
 
   const downloadGPX = (route: { coordinates: [number, number][]; name: string; distance: number; elevationGain: number }) => {
-    // Convert coordinates to GPX format
-    const gpxPoints = route.coordinates.map(([lon, lat]) => `    <trkpt lat="${lat}" lon="${lon}"></trkpt>`).join('\n');
+    // Convert coordinates to GPX format with Garmin-compatible structure
+    const gpxPoints = route.coordinates
+      .map(([lon, lat]) => `      <trkpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}">
+        <ele>0</ele>
+        <time>${new Date().toISOString()}</time>
+      </trkpt>`)
+      .join('\n');
     
     const gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="GPX Runner">
+<gpx version="1.1" creator="GPX Runner" 
+  xmlns="http://www.topografix.com/GPX/1/1" 
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>${route.name}</name>
+    <time>${new Date().toISOString()}</time>
+  </metadata>
   <trk>
     <name>${route.name}</name>
     <trkseg>
@@ -273,10 +285,11 @@ ${gpxPoints}
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           distance: suggestDistance,
-          type: 'mixed', // Using mixed since we removed type selection
+          type: 'mixed',
           avoidFamiliar,
           centerLat,
           centerLon,
+          existingRoutes: avoidFamiliar ? routes.map(r => ({ coordinates: r.coordinates })) : [],
         }),
       });
 
@@ -394,9 +407,9 @@ ${gpxPoints}
         </div>
       </header>
 
-      {/* Suggest Route Panel */}
+      {/* Suggest Route Panel - sticky when open */}
       {showSuggestPanel && (
-        <div className="border-b border-zinc-800 bg-zinc-900/50 p-4 animate-fade-in">
+        <div className="sticky top-[73px] z-40 border-b border-zinc-800 bg-zinc-900/95 backdrop-blur-md p-4 animate-fade-in shadow-lg">
           <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <label className="text-sm text-zinc-400">Distance:</label>
@@ -661,7 +674,11 @@ ${gpxPoints}
                   <div className="flex gap-4 mt-1 text-sm text-zinc-400">
                     <span>📏 {(suggestedRoute.distance / 1000).toFixed(1)} km</span>
                     <span>⬆️ {suggestedRoute.elevationGain}m elevation</span>
-                    <span>{avoidFamiliar ? "🆕 New paths" : "🔄 Familiar paths"}</span>
+                    <span title="How much of this route overlaps with your previous runs">
+                      {suggestedRoute.familiarityScore !== undefined 
+                        ? `🔄 ${suggestedRoute.familiarityScore}% familiar`
+                        : (avoidFamiliar ? "🆕 New paths" : "🔄 Familiar paths")}
+                    </span>
                   </div>
                 </div>
                 <div className="flex gap-2">
