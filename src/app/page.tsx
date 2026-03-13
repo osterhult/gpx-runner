@@ -562,37 +562,37 @@ ${gpxPoints}
 
       <main className="max-w-7xl mx-auto px-4 py-4 md:py-6 flex flex-col md:flex-row gap-4 md:gap-6">
         {/* Sidebar - scrollable independently */}
-        <aside className="w-full md:w-80 flex-shrink-0 space-y-4 overflow-y-auto max-h-[40vh] md:max-h-[calc(100vh-200px)]">
+        <aside className={`w-full md:w-80 flex-shrink-0 space-y-4 overflow-y-auto max-h-[40vh] md:max-h-[calc(100vh-200px)] ${darkMode ? '' : 'bg-white/50 rounded-2xl p-4'}`}>
           {/* Stats Card */}
           {stats && (
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-5 animate-fade-in">
-              <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-4">Your Running</h2>
+            <div className={`rounded-2xl p-5 animate-fade-in ${darkMode ? 'bg-zinc-900/50 border border-zinc-800' : 'bg-white border border-gray-200'}`}>
+              <h2 className={`text-sm font-medium uppercase tracking-wider mb-4 ${darkMode ? 'text-zinc-400' : 'text-gray-500'}`}>Your Running</h2>
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-zinc-800/50 rounded-xl p-3">
-                  <div className="text-2xl font-bold text-cyan-400">{stats.totalRuns}</div>
-                  <div className="text-xs text-zinc-500">Runs</div>
+                <div className={`rounded-xl p-3 ${darkMode ? 'bg-zinc-800/50' : 'bg-gray-100'}`}>
+                  <div className="text-2xl font-bold text-cyan-500">{stats.totalRuns}</div>
+                  <div className={`text-xs ${darkMode ? 'text-zinc-500' : 'text-gray-500'}`}>Runs</div>
                 </div>
-                <div className="bg-zinc-800/50 rounded-xl p-3">
-                  <div className="text-2xl font-bold text-pink-400">{stats.totalDistance}</div>
-                  <div className="text-xs text-zinc-500">km total</div>
+                <div className={`rounded-xl p-3 ${darkMode ? 'bg-zinc-800/50' : 'bg-gray-100'}`}>
+                  <div className="text-2xl font-bold text-pink-500">{stats.totalDistance}</div>
+                  <div className={`text-xs ${darkMode ? 'text-zinc-500' : 'text-gray-500'}`}>km total</div>
                 </div>
-                <div className="bg-zinc-800/50 rounded-xl p-3">
-                  <div className="text-2xl font-bold text-violet-400">{stats.totalElevation}</div>
-                  <div className="text-xs text-zinc-500">m elevation</div>
+                <div className={`rounded-xl p-3 ${darkMode ? 'bg-zinc-800/50' : 'bg-gray-100'}`}>
+                  <div className="text-2xl font-bold text-violet-500">{stats.totalElevation}</div>
+                  <div className={`text-xs ${darkMode ? 'text-zinc-500' : 'text-gray-500'}`}>m elevation</div>
                 </div>
-                <div className="bg-zinc-800/50 rounded-xl p-3">
-                  <div className="text-2xl font-bold text-amber-400">{formatDuration(stats.totalTime)}</div>
-                  <div className="text-xs text-zinc-500">time</div>
+                <div className={`rounded-xl p-3 ${darkMode ? 'bg-zinc-800/50' : 'bg-gray-100'}`}>
+                  <div className="text-2xl font-bold text-amber-500">{formatDuration(stats.totalTime)}</div>
+                  <div className={`text-xs ${darkMode ? 'text-zinc-500' : 'text-gray-500'}`}>time</div>
                 </div>
               </div>
             </div>
           )}
 
           {/* Routes List - only show uploaded routes, not suggested */}
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
-            <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+          <div className={`rounded-2xl overflow-hidden ${darkMode ? 'bg-zinc-900/50 border border-zinc-800' : 'bg-white border border-gray-200'}`}>
+            <div className={`p-4 flex items-center justify-between ${darkMode ? 'border-zinc-800' : 'border-gray-200'}`} style={{ borderBottomWidth: 1 }}>
               <h2 className="font-medium">Your Routes</h2>
-              <span className="text-xs text-zinc-500">
+              <span className={`text-xs ${darkMode ? 'text-zinc-500' : 'text-gray-500'}`}>
                 {filteredRoutes.length !== routes.length 
                   ? `${filteredRoutes.length} / ${routes.length} routes` 
                   : `${routes.length} routes`}
@@ -666,8 +666,8 @@ ${gpxPoints}
           )}
         </aside>
 
-        {/* Map - takes remaining space */}
-        <div className="flex-1 flex flex-col min-h-[50vh] md:min-h-0">
+        {/* Map - takes remaining space, doesn't shrink */}
+        <div className="flex-1 flex flex-col min-h-[300px] md:min-h-0 flex-shrink-0">
           {/* Suggested Route Info Panel */}
           {suggestedRoute && (
             <div className="mb-4 p-4 bg-gradient-to-r from-pink-500/10 to-violet-500/10 border border-pink-500/30 rounded-xl">

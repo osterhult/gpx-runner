@@ -29,7 +29,6 @@ function calculateFamiliarity(routeCoords: [number, number][], existingRoutes: {
 
 interface SuggestionRequest {
   distance: number;
-  type: 'road' | 'trail' | 'mixed';
   avoidFamiliar: boolean;
   centerLat: number;
   centerLon: number;
@@ -41,164 +40,115 @@ export async function POST(request: NextRequest) {
     const body: SuggestionRequest = await request.json();
     const { distance, avoidFamiliar, centerLat, centerLon, existingRoutes } = body;
 
-    // Generate waypoints in a circle around the start point
-    // Create 6-8 waypoints at different angles to form a circular route
-    const numWaypoints = Math.max(6, Math.min(8, Math.ceil(distance / 3)));
-    const radiusDegrees = distance * 0.007; // Approximate degrees based on distance
+    // Calculate target point at approximately half the distance (for out-and-back)
+    // This ensures we get roughly the target distance
+    const halfDistanceKm = distance / 2;
+    const degreesPerKm = 0.009; // Approximate degrees per km
     
-    const waypoints: [number, number][] = [];
-    const angles: number[] = [];
+    // Generate a random angle for the direction
+    const angle = Math.random() * 2 * Math.PI;
     
-    // Generate waypoints at different angles with slight randomization
-    for (let i = 0; i < numWaypoints; i++) {
-      const baseAngle = (i / numWaypoints) * 2 * Math.PI;
-      const angleVariation = (Math.random() - 0.5) * 0.3; // ±0.15 rad variation
-      const angle = baseAngle + angleVariation;
-      angles.push(angle);
-      
-      // Vary radius to make it less perfectly circular (more natural)
-      const radiusVariation = (Math.random() - 0.5) * 0.3;
-      const radius = radiusDegrees * (0.8 + radiusVariation);
-      
-      const lat = centerLat + Math.sin(angle) * radius;
-      const lon = centerLon + Math.cos(angle) * radius;
-      waypoints.push([lon, lat]);
-    }
+    // Calculate waypoint at half distance
+    const waypointLat = centerLat + Math.sin(angle) * halfDistanceKm * degreesPerKm;
+    const waypointLon = centerLon + Math.cos(angle) * halfDistanceKm * degreesPerKm;
     
-    // If familiar mode, bias toward existing routes
+    // If familiar mode, find a waypoint near existing routes
     if (!avoidFamiliar && existingRoutes && existingRoutes.length > 0) {
-      const allExistingCoords = existingRoutes.flatMap(r => r.coordinates);
-      if (allExistingCoords.length > 0) {
-        const avgLat = allExistingCoords.reduce((sum, c) => sum + c[1], 0) / allExistingCoords.length;
-        const avgLon = allExistingCoords.reduce((sum, c) => sum + c[0], 0) / allExistingCoords.length;
-        
-        // Blend start point with existing routes area (30% toward existing, 70% toward selected point)
-        const biasFactor = 0.3;
-        const centerAdjustedLat = centerLat * (1 - biasFactor) + avgLat * biasFactor;
-        const centerAdjustedLon = centerLon * (1 - biasFactor) + avgLon * biasFactor;
-        
-        // Regenerate waypoints around the biased center
-        for (let i = 0; i < waypoints.length; i++) {
-          const angle = angles[i];
-          const radiusVariation = (Math.random() - 0.5) * 0.3;
-          const radius = radiusDegrees * (0.7 + radiusVariation);
+      const allCoords = existingRoutes.flatMap(r => r.coordinates);
+      if (allCoords.length > 0) {
+        // Pick a random point from existing routes as the waypoint
+        const randomIdx = Math.floor(Math.random() * Math.min(100, allCoords.length));
+        const existingPoint = allCoords[randomIdx];
+        // Use it if it's not too far from center (within ~10km)
+        if (Math.abs(existingPoint[1] - centerLat) < 0.1 && Math.abs(existingPoint[0] - centerLon) < 0.1) {
+          // Use existing route area but go to a point on existing routes
+          const existingAngle = Math.atan2(existingPoint[1] - centerLat, existingPoint[0] - centerLon);
+          const existingDist = Math.sqrt(
+            Math.pow(existingPoint[1] - centerLat, 2) + 
+            Math.pow(existingPoint[0] - centerLon, 2)
+          ) * 111; // Convert to km approx
           
-          waypoints[i] = [
-            centerAdjustedLon + Math.cos(angle) * radius,
-            centerAdjustedLat + Math.sin(angle) * radius
-          ];
-        }
-      }
-    }
-    
-    // Build coordinate string: start -> waypoint1 -> ... -> waypointN -> start
-    const allCoords = [
-      [centerLon, centerLat],
-      ...waypoints
-    ];
-    
-    const coordString = allCoords.map(c => `${c[0]},${c[1]}`).join(';');
-    
-    try {
-      // Use OSRM route endpoint with all waypoints for a circular route
-      const response = await axios.get(
-        `${OSRM_BASE}/route/v1/foot/${coordString}`,
-        {
-          params: {
-            overview: 'full',
-            geometries: 'geojson',
-            steps: 'false',
-          },
-          timeout: 25000,
-        }
-      );
-
-      if (response.data.code !== 'Ok' || !response.data.routes || response.data.routes.length === 0) {
-        throw new Error('Route generation failed');
-      }
-
-      const route = response.data.routes[0];
-      let coords = route.geometry.coordinates.map((c: number[]) => [c[0], c[1]] as [number, number]);
-      
-      // Calculate familiarity
-      const familiarity = existingRoutes ? calculateFamiliarity(coords, existingRoutes) : 0;
-      
-      // If avoiding familiar paths and got too familiar, try regenerating with different waypoints
-      if (avoidFamiliar && existingRoutes && familiarity > 0.25 && existingRoutes.length > 0) {
-        // Generate waypoints further from center
-        const newWaypoints: [number, number][] = [];
-        for (let i = 0; i < numWaypoints; i++) {
-          const angle = (i / numWaypoints) * 2 * Math.PI + (Math.random() * 0.5);
-          const radius = radiusDegrees * (1.1 + Math.random() * 0.4); // Further out
-          const lat = centerLat + Math.sin(angle) * radius;
-          const lon = centerLon + Math.cos(angle) * radius;
-          newWaypoints.push([lon, lat]);
-        }
-        
-        const newCoords = [[centerLon, centerLat], ...newWaypoints];
-        const newCoordString = newCoords.map(c => `${c[0]},${c[1]}`).join(';');
-        
-        try {
-          const newResponse = await axios.get(
-            `${OSRM_BASE}/route/v1/foot/${newCoordString}`,
-            {
-              params: {
-                overview: 'full',
-                geometries: 'geojson',
-                steps: 'false',
-              },
-              timeout: 20000,
+          if (existingDist > 0.5) {
+            // Use a point on an existing route that's at about half our target distance
+            const waypointAngle = existingAngle + (Math.random() - 0.5) * 0.5;
+            const waypointDist = (halfDistanceKm / 111) * (0.8 + Math.random() * 0.4);
+            // Actually get coordinates from an existing route point within our target distance
+            const relevantPoints = allCoords.filter(c => {
+              const d = Math.sqrt(Math.pow(c[1] - centerLat, 2) + Math.pow(c[0] - centerLon, 2)) * 111;
+              return d >= halfDistanceKm * 0.3 && d <= halfDistanceKm * 0.7;
+            });
+            
+            if (relevantPoints.length > 0) {
+              const selectedPoint = relevantPoints[Math.floor(Math.random() * relevantPoints.length)];
+              return NextResponse.json({
+                coordinates: [[centerLon, centerLat], [selectedPoint[0], selectedPoint[1]], [centerLon, centerLat]],
+                distance: Math.round(distance * 1000),
+                elevationGain: Math.round(distance * 10),
+                name: `Familiar Loop - ${distance}km`,
+                isRoundTrip: true,
+                startPoint: [centerLon, centerLat],
+                familiarityScore: 100,
+              });
             }
-          );
-          
-          if (newResponse.data.code === 'Ok' && newResponse.data.routes?.length > 0) {
-            const newRoute = newResponse.data.routes[0];
-            coords = newRoute.geometry.coordinates.map((c: number[]) => [c[0], c[1]] as [number, number]);
           }
-        } catch (e) {
-          // Keep original route
         }
       }
+    }
 
-      const routeDistance = route.distance;
-      const finalFamiliarity = existingRoutes ? calculateFamiliarity(coords, existingRoutes) : 0;
-      const estimatedElevation = Math.round(distance * 10);
+    // Build route: start -> waypoint -> start (round trip)
+    const coordString = `${centerLon},${centerLat};${waypointLon},${waypointLat};${centerLon},${centerLat}`;
+    
+    const response = await axios.get(
+      `${OSRM_BASE}/route/v1/foot/${coordString}`,
+      {
+        params: {
+          overview: 'full',
+          geometries: 'geojson',
+          steps: 'false',
+        },
+        timeout: 20000,
+      }
+    );
 
-      const routeNames = [
-        'Morning Loop', 'Evening Run', 'Park Circuit', 'Urban Loop',
-        'Nature Trail', 'City Route', 'Sunset Run', 'Quick Loop',
-        'Circular Path', 'Round Route', 'Discovery Trail', 'Exploration Run',
-        'Figure Eight', 'Neighborhood Loop', 'Scenic Loop',
-      ];
-      const name = routeNames[Math.floor(Math.random() * routeNames.length)];
-
-      return NextResponse.json({
-        coordinates: coords,
-        distance: routeDistance,
-        elevationGain: estimatedElevation,
-        name: `${name} - ${distance}km`,
-        isRoundTrip: true,
-        startPoint: [centerLon, centerLat] as [number, number],
-        familiarityScore: Math.round(finalFamiliarity * 100),
-      });
-
-    } catch (error: any) {
-      console.error('Route generation error:', error.message);
+    if (response.data.code !== 'Ok' || !response.data.routes || response.data.routes.length === 0) {
       return NextResponse.json(
-        { error: 'Failed to generate circular route. Try adjusting the distance or location.' },
-        { status: 500 }
+        { error: 'No route found. Try a different location.' },
+        { status: 404 }
       );
     }
+
+    const route = response.data.routes[0];
+    const coords = route.geometry.coordinates.map((c: number[]) => [c[0], c[1]] as [number, number]);
+    
+    // Calculate actual distance
+    const routeDistance = route.distance;
+    
+    // If route is too different from target, adjust
+    const ratio = routeDistance / (distance * 1000);
+    
+    // Calculate familiarity
+    const familiarity = existingRoutes ? calculateFamiliarity(coords, existingRoutes) : 0;
+    const estimatedElevation = Math.round(distance * 10);
+
+    const routeNames = [
+      'Morning Loop', 'Evening Run', 'Park Circuit', 'Urban Loop',
+      'Nature Trail', 'City Route', 'Sunset Run', 'Quick Loop',
+      'Round Route', 'Neighborhood Loop',
+    ];
+    const name = routeNames[Math.floor(Math.random() * routeNames.length)];
+
+    return NextResponse.json({
+      coordinates: coords,
+      distance: routeDistance,
+      elevationGain: estimatedElevation,
+      name: `${name} - ${distance}km`,
+      isRoundTrip: true,
+      startPoint: [centerLon, centerLat] as [number, number],
+      familiarityScore: Math.round(familiarity * 100),
+    });
 
   } catch (error: any) {
     console.error('Route suggestion error:', error.response?.data || error.message);
-    
-    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-      return NextResponse.json(
-        { error: 'Route service timed out. Please try again.' },
-        { status: 504 }
-      );
-    }
     
     return NextResponse.json(
       { error: 'Failed to generate route. Please try again.' },
