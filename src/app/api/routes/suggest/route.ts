@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 
-// OpenRouteService API key - set in environment variables
-const ORS_API_KEY = process.env.ORS_API_KEY || '';
+// Using OSRM (Open Source Routing Machine) - free, no API key needed
+const OSRM_BASE = 'https://router.project-osrm.org';
 
 interface SuggestionRequest {
   distance: number; // km
@@ -16,54 +16,48 @@ export async function POST(request: NextRequest) {
     const body: SuggestionRequest = await request.json();
     const { distance, type, centerLat, centerLon } = body;
 
-    if (!ORS_API_KEY) {
-      return NextResponse.json(
-        { error: 'OpenRouteService API key not configured. Please set ORS_API_KEY in environment.' },
-        { status: 500 }
-      );
-    }
-
+    // Convert km to meters for OSRM
+    const targetDistanceMeters = distance * 1000;
+    
     // Generate random start point within reasonable distance of center
-    // For a ~5km run, we want start point within ~2km of center
     const radiusKm = 2;
     const startLat = centerLat + (Math.random() - 0.5) * (radiusKm / 111);
     const startLon = centerLon + (Math.random() - 0.5) * (radiusKm / 111);
 
-    // Generate a random end point that makes the route approximately the right distance
-    // This is simplified - in production you'd use proper routing to calculate endpoints
+    // Calculate approximate end point to get roughly the right distance
     const angle = Math.random() * 2 * Math.PI;
-    const distanceRatio = 0.5 + Math.random() * 0.5; // 50-100% of target distance
+    const distanceRatio = 0.5 + Math.random() * 0.5;
     const endDistanceKm = distance * distanceRatio;
     
     const endLat = startLat + (Math.sin(angle) * endDistanceKm / 111);
     const endLon = startLon + (Math.cos(angle) * endDistanceKm / 111);
 
-    // Use OpenRouteService Directions API
-    const profile = type === 'road' ? 'foot-walking' : 'hiking';
+    // Use OSRM route API
+    const profile = type === 'road' ? 'foot' : 'foot';
     
     const response = await axios.get(
-      `https://api.openrouteservice.org/v2/directions/${profile}/geojson`,
+      `${OSRM_BASE}/route/v1/${profile}/${startLon},${startLat};${endLon},${endLat}`,
       {
         params: {
-          api_key: ORS_API_KEY,
-          start: `${startLon},${startLat}`,
-          end: `${endLon},${endLat}`,
+          overview: 'full',
+          geometries: 'geojson',
+          steps: 'false',
         },
-        timeout: 10000,
+        timeout: 15000,
       }
     );
 
-    if (!response.data.features || response.data.features.length === 0) {
+    if (response.data.code !== 'Ok' || !response.data.routes || response.data.routes.length === 0) {
       return NextResponse.json(
-        { error: 'No route found for these points' },
+        { error: 'No route found for these points. Try a different location.' },
         { status: 404 }
       );
     }
 
-    const route = response.data.features[0];
+    const route = response.data.routes[0];
     const coords = route.geometry.coordinates.map((c: number[]) => [c[0], c[1]] as [number, number]);
-    const routeDistance = route.properties.summary.distance;
-    const routeElevation = route.properties.summary.ascent || 0;
+    const routeDistance = route.distance;
+    const routeElevation = 0; // OSRM doesn't provide elevation in basic response
 
     // Generate route name
     const routeNames = [
@@ -88,15 +82,15 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Route suggestion error:', error.response?.data || error.message);
     
-    if (error.response?.status === 401) {
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
       return NextResponse.json(
-        { error: 'Invalid OpenRouteService API key' },
-        { status: 401 }
+        { error: 'Route service timed out. Please try again.' },
+        { status: 504 }
       );
     }
     
     return NextResponse.json(
-      { error: 'Failed to generate route suggestion' },
+      { error: 'Failed to generate route suggestion. Please try again.' },
       { status: 500 }
     );
   }
