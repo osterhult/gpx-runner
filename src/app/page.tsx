@@ -81,7 +81,10 @@ export default function Home() {
         
         const firebaseRoutes: GPXRoute[] = [];
         snapshot.forEach((doc) => {
-          firebaseRoutes.push(doc.data() as GPXRoute);
+          const data = doc.data();
+            // Convert back from Firestore format to [number, number][]
+            const coords = data.coordinates.map((c: {lon: number; lat: number}) => [c.lon, c.lat] as [number, number]);
+            firebaseRoutes.push({ ...data, coordinates: coords } as GPXRoute);
         });
         
         if (firebaseRoutes.length > 0) {
@@ -268,11 +271,14 @@ export default function Home() {
         if (user && db) {
           try {
             // Use db from firebase.ts
+            // Convert coordinates to Firestore-compatible format (array of objects instead of nested arrays)
+            const coordsForFirestore = coordinates.map(c => ({ lat: c[1], lon: c[0] }));
+            
             await setDoc(doc(db, "routes", routeIdForDb2), {
               id: routeIdForDb2,
               name,
               date: date.toISOString(),
-              coordinates,
+              coordinates: coordsForFirestore,
               distance,
               elevationGain,
               color: getRandomColor(),
