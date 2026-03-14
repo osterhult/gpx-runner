@@ -12,7 +12,7 @@ const firebaseConfig = {
   measurementId: "G-TY9Z9WB4ZW"
 };
 
-// Initialize Firebase - only on client side
+// Initialize Firebase
 let app: FirebaseApp | undefined;
 let storage: FirebaseStorage | undefined;
 let auth: Auth | undefined;

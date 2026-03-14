@@ -133,14 +133,20 @@ export default function Home() {
     });
   };
 
-  // Upload GPX file to Firebase Storage
+  // Upload GPX file to Firebase Storage (per user folder)
   const uploadToFirebase = async (file: File, routeId: string) => {
     if (!firebaseStorage) {
-      console.error("Firebase storage not initialized");
+      console.log("Firebase storage not available, using local only");
+      return null;
+    }
+    if (!user) {
+      console.log("No user logged in, using local only");
       return null;
     }
     try {
-      const storageRef = ref(firebaseStorage as FirebaseStorage, `gpx-files/${routeId}.gpx`);
+      // Store in user-specific folder: gpx-files/{userId}/{routeId}.gpx
+      const userId = user.uid;
+      const storageRef = ref(firebaseStorage as FirebaseStorage, `gpx-files/${userId}/${routeId}.gpx`);
       await uploadBytes(storageRef, file);
       const downloadUrl = await getDownloadURL(storageRef);
       return downloadUrl;
@@ -328,14 +334,29 @@ ${gpxPoints}
 
       // Call OSRM directly from client (works on static hosting)
       const targetMeters = suggestDistance * 1000;
-      const halfDistanceKm = suggestDistance / 2;
-      const radiusDegrees = halfDistanceKm * 0.009 * (0.9 + Math.random() * 0.2);
-      const angle = Math.random() * 2 * Math.PI;
-      const waypointLat = centerLat + Math.sin(angle) * radiusDegrees;
-      const waypointLon = centerLon + Math.cos(angle) * radiusDegrees;
-
-      // Simple round trip: start -> waypoint -> start
-      const coordString = `${centerLon},${centerLat};${waypointLon},${waypointLat};${centerLon},${centerLat}`;
+      
+      // Generate waypoints in a proper circle
+      const numWaypoints = 6;
+      const radiusKm = targetMeters / 2000; // Radius to get approximately the target distance
+      const radiusDegrees = radiusKm / 111; // Convert km to degrees (approx)
+      
+      // Generate points around a circle
+      const waypoints: number[][] = [];
+      for (let i = 0; i < numWaypoints; i++) {
+        const angle = (i / numWaypoints) * 2 * Math.PI;
+        const lat = centerLat + Math.sin(angle) * radiusDegrees;
+        const lon = centerLon + Math.cos(angle) * radiusDegrees * 0.7; // Adjust for lat/lon aspect ratio in Sweden
+        waypoints.push([lon, lat]);
+      }
+      
+      // Build coordinate string: start -> waypoints -> back to start
+      const allCoords = [
+        [centerLon, centerLat],
+        ...waypoints,
+        [centerLon, centerLat]
+      ];
+      
+      const coordString = allCoords.map(c => `${c[0]},${c[1]}`).join(';');
       
       const response = await fetch(
         `https://router.project-osrm.org/route/v1/foot/${coordString}?overview=full&geometries=geojson`,
@@ -349,12 +370,8 @@ ${gpxPoints}
       const data = await response.json();
       
       if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
-        // Fallback route
-        const fallbackCoords: [number, number][] = [
-          [centerLon, centerLat],
-          [waypointLon, waypointLat],
-          [centerLon, centerLat]
-        ];
+        // Fallback route - use simple circular coordinates
+        const fallbackCoords: [number, number][] = allCoords as [number, number][];
         
         setSuggestedRoute({
           coordinates: fallbackCoords,
@@ -471,8 +488,74 @@ ${gpxPoints}
     );
   }
 
-  // Note: Auth is disabled for now - app works without login
-  // Login form removed temporarily
+  // Show login if not authenticated
+  if (!user && !authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-8">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-gradient-to-br from-cyan-400 to-cyan-600 flex items-center justify-center">
+              <svg className="w-8 h-8 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-white">GPX Runner</h1>
+            <p className="text-zinc-500 mt-2">Sign in to save your routes</p>
+          </div>
+          
+          <form onSubmit={handleAuth} className="space-y-4">
+            <div>
+              <label className="block text-sm text-zinc-400 mb-1">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-zinc-400 mb-1">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-500"
+                required
+                minLength={6}
+              />
+            </div>
+            {authError && <p className="text-red-400 text-sm">{authError}</p>}
+            <button
+              type="submit"
+              className="w-full py-3 bg-gradient-to-r from-cyan-500 to-cyan-600 text-black font-medium rounded-lg hover:from-cyan-400 hover:to-cyan-500 transition-all"
+            >
+              {isRegistering ? "Create Account" : "Sign In"}
+            </button>
+          </form>
+          
+          <p className="text-center text-zinc-500 text-sm mt-6">
+            {isRegistering ? "Already have an account?" : "Don't have an account?"}{" "}
+            <button
+              onClick={() => { setIsRegistering(!isRegistering); setAuthError(""); }}
+              className="text-cyan-400 hover:underline"
+            >
+              {isRegistering ? "Sign In" : "Create Account"}
+            </button>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center">
+        <div className="text-zinc-500">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-[#0a0a0b]' : 'bg-gray-100'} ${darkMode ? 'text-white' : 'text-gray-900'}`}>
@@ -557,6 +640,19 @@ ${gpxPoints}
                 className="hidden"
               />
             </label>
+            
+            {/* User info / Logout */}
+            {user && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-zinc-400 hidden md:inline">{user.email}</span>
+                <button
+                  onClick={handleLogout}
+                  className="px-3 py-2 border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-600 rounded-lg transition-colors text-sm"
+                >
+                  Sign Out
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
