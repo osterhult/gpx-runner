@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import { GPXRoute, RouteSuggestion } from "@/app/types";
@@ -101,6 +101,26 @@ export default function Map({
   isSelectingStartPoint,
   darkMode = true
 }: MapProps) {
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+
+  useEffect(() => {
+    // Request user's geolocation
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setUserLocation([latitude, longitude]);
+          console.log("User location:", latitude, longitude);
+        },
+        (error) => {
+          console.log("Geolocation error:", error);
+          // Silently fail - will use default
+        },
+        { timeout: 5000 }
+      );
+    }
+  }, []);
+
   const getCenter = () => {
     if (suggestedRoute && suggestedRoute.coordinates.length > 0) {
       const coords = suggestedRoute.coordinates;
@@ -109,7 +129,13 @@ export default function Map({
       return [avgLat, avgLon] as [number, number];
     }
     
-    if (routes.length === 0) return [59.3293, 18.0686] as [number, number];
+    if (routes.length === 0) {
+      // Use user's location if available, fallback to Stockholm
+      if (userLocation) {
+        return userLocation;
+      }
+      return [59.3293, 18.0686] as [number, number];
+    }
     
     const allCoords = routes.flatMap((r) => r.coordinates);
     if (allCoords.length === 0) return [59.3293, 18.0686] as [number, number];
