@@ -11,16 +11,18 @@ import { auth } from './firebase';
 
 export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  // IMPORTANT: Start as false to prevent hanging on SSR/initial load
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // If no auth object (SSR or not initialized), skip auth
     if (!auth) {
-      console.log("Firebase auth not initialized");
       setLoading(false);
       return;
     }
 
+    // Set up auth state listener
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setLoading(false);
@@ -30,6 +32,7 @@ export const useAuth = () => {
       setLoading(false);
     });
 
+    // Cleanup on unmount
     return unsubscribe;
   }, []);
 
