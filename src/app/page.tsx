@@ -335,28 +335,19 @@ ${gpxPoints}
       // Call OSRM directly from client (works on static hosting)
       const targetMeters = suggestDistance * 1000;
       
-      // Generate waypoints in a proper circle
-      const numWaypoints = 6;
-      const radiusKm = targetMeters / 2000; // Radius to get approximately the target distance
-      const radiusDegrees = radiusKm / 111; // Convert km to degrees (approx)
+      // Simple approach: go out to a waypoint and come back
+      // For a ~5km round trip, go ~2.5km out and ~2.5km back
+      // OSRM adds ~30% extra for road routing, so target 70% of half distance
+      const outAndBackKm = targetMeters / 1000 / 2 / 1.3; // ~1.9km for 5km target
+      const radiusDegrees = outAndBackKm / 111;
       
-      // Generate points around a circle
-      const waypoints: number[][] = [];
-      for (let i = 0; i < numWaypoints; i++) {
-        const angle = (i / numWaypoints) * 2 * Math.PI;
-        const lat = centerLat + Math.sin(angle) * radiusDegrees;
-        const lon = centerLon + Math.cos(angle) * radiusDegrees * 0.7; // Adjust for lat/lon aspect ratio in Sweden
-        waypoints.push([lon, lat]);
-      }
+      // Random direction for variety
+      const angle = Math.random() * 2 * Math.PI;
+      const waypointLat = centerLat + Math.sin(angle) * radiusDegrees;
+      const waypointLon = centerLon + Math.cos(angle) * radiusDegrees;
       
-      // Build coordinate string: start -> waypoints -> back to start
-      const allCoords = [
-        [centerLon, centerLat],
-        ...waypoints,
-        [centerLon, centerLat]
-      ];
-      
-      const coordString = allCoords.map(c => `${c[0]},${c[1]}`).join(';');
+      // Build coordinate string: start -> waypoint -> start (simple out and back)
+      const coordString = `${centerLon},${centerLat};${waypointLon},${waypointLat};${centerLon},${centerLat}`;
       
       const response = await fetch(
         `https://router.project-osrm.org/route/v1/foot/${coordString}?overview=full&geometries=geojson`,
@@ -370,8 +361,12 @@ ${gpxPoints}
       const data = await response.json();
       
       if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
-        // Fallback route - use simple circular coordinates
-        const fallbackCoords: [number, number][] = allCoords as [number, number][];
+        // Fallback route - simple straight line
+        const fallbackCoords: [number, number][] = [
+          [centerLon, centerLat],
+          [waypointLon, waypointLat],
+          [centerLon, centerLat]
+        ];
         
         setSuggestedRoute({
           coordinates: fallbackCoords,
