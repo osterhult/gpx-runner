@@ -385,7 +385,26 @@ ${gpxPoints}
     URL.revokeObjectURL(url);
   };
 
-  const getSuggestion = async () => {
+  // Helper: Calculate destination point given start, bearing, and distance
+function destinationPoint(lat: number, lng: number, bearingDeg: number, distanceMeters: number): [number, number] {
+  const R = 6371000; // Earth radius in meters
+  const brng = (bearingDeg * Math.PI) / 180;
+  const lat1 = (lat * Math.PI) / 180;
+  const lng1 = (lng * Math.PI) / 180;
+  const d = distanceMeters / R;
+
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(brng)
+  );
+  const lng2 = lng1 + Math.atan2(
+    Math.sin(brng) * Math.sin(d) * Math.cos(lat1),
+    Math.cos(d) - Math.sin(lat1) * Math.sin(lat2)
+  );
+
+  return [(lng2 * 180) / Math.PI, (lat2 * 180) / Math.PI];
+}
+
+const getSuggestion = async () => {
     setIsSuggesting(true);
     setApiKeyMissing(false);
 
@@ -398,60 +417,117 @@ ${gpxPoints}
         centerLat = selectedStartPoint[1];
         centerLon = selectedStartPoint[0];
       } else if (routes.length > 0) {
-        const allCoords = routes.flatMap(r => r.coordinates);
-        centerLat = allCoords.reduce((sum, [, lat]) => sum + lat, 0) / allCoords.length;
-        centerLon = allCoords.reduce((sum, [lon]) => sum + lon, 0) / allCoords.length;
+        const allCoords = routes.flatMap(r => r.coordinates || []);
+        if (allCoords.length > 0 && Array.isArray(allCoords[0])) {
+          centerLat = allCoords.reduce((sum: number, c: any) => sum + (Array.isArray(c) ? c[1] : 0), 0) / allCoords.length;
+          centerLon = allCoords.reduce((sum: number, c: any) => sum + (Array.isArray(c) ? c[0] : 0), 0) / allCoords.length;
+        } else {
+          centerLat = 59.3293;
+          centerLon = 18.0686;
+        }
       } else {
         centerLat = 59.3293;
         centerLon = 18.0686;
       }
 
-      // Call OSRM directly from client (works on static hosting)
       const targetMeters = suggestDistance * 1000;
       const toleranceMeters = 1000; // ±1km tolerance
-      const numWaypoints = 4; // More waypoints for better shape
       
-      // Calculate radius for a circular route
-      // Total route distance ≈ numWaypoints * (2 * π * radius) / road_factor
-      // radius_km = target / (numWaypoints * 2 * π * road_factor)
-      // road_factor ~1.3 for walking/running paths
-      const roadFactor = 1.3;
-      const waypointDistKm = targetMeters / 1000 / (numWaypoints * 2 * Math.PI * roadFactor);
-      const radiusDegrees = waypointDistKm / 111;
+      // Generate multiple candidates and pick the best one
+      // Based on route-generator-pro algorithm
+      const candidates: any[] = [];
+      const roughRadiusMeters = Math.max(250, targetMeters / 4.4);
       
-      // Generate waypoints in a circle
-      const waypoints: [number, number][] = [];
-      for (let i = 0; i < numWaypoints; i++) {
-        const angle = (i / numWaypoints) * 2 * Math.PI + (Math.random() * 0.3 - 0.15);
-        // Add slight random variation to make it less perfect
-        const lat = centerLat + Math.sin(angle) * radiusDegrees * (0.9 + Math.random() * 0.2);
-        const lon = centerLon + Math.cos(angle) * radiusDegrees * (0.9 + Math.random() * 0.2) * 0.85;
-        waypoints.push([lon, lat]);
+      // Different shape patterns (waypoint angles)
+      const shapes = [
+        [0, 120, 240],       // Triangle
+        [0, 90, 180, 270],  // Square
+        [0, 72, 144, 216, 288], // Pentagon
+        [0, 110, 230],      // Triangle variant
+        [0, 100, 200, 300], // Diamond
+      ];
+      
+      // Radius multipliers
+      const radiusMults = [0.8, 0.9, 1.0, 1.1, 1.2];
+      
+      // Bearing offsets
+      const bearingStep = 30;
+      
+      for (let bearing = 0; bearing < 360; bearing += bearingStep) {
+        for (const mult of radiusMults) {
+          for (const shape of shapes) {
+            const radius = roughRadiusMeters * mult;
+            const waypoints: [number, number][] = shape.map((offset) => {
+              const [lng, lat] = destinationPoint(centerLat, centerLon, (bearing + offset) % 360, radius);
+              return [lng, lat];
+            });
+            
+            candidates.push({
+              waypoints,
+              bearing,
+              mult,
+              shape: shape.join('-'),
+            });
+            
+            if (candidates.length >= 30) break; // Limit to 30 candidates
+          }
+          if (candidates.length >= 30) break;
+        }
+        if (candidates.length >= 30) break;
       }
       
-      // Build coordinate string: center -> waypoint1 -> waypoint2 -> waypoint3 -> center (loop)
-      const coordString = [
-        `${centerLon},${centerLat}`,
-        ...waypoints.map(w => `${w[0]},${w[1]}`),
-        `${centerLon},${centerLat}`
-      ].join(';');
-      
-      const response = await fetch(
-        `https://router.project-osrm.org/route/v1/foot/${coordString}?overview=full&geometries=geojson`,
-        { signal: AbortSignal.timeout(15000) }
-      );
-
-      if (!response.ok) {
-        throw new Error('Route service unavailable');
+      // Shuffle candidates for variety
+      for (let i = candidates.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
       }
-
-      const data = await response.json();
       
-      if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
-        // Fallback route - use the waypoints we generated
+      // Try each candidate and track best one
+      let bestRoute: any = null;
+      let bestDistanceDiff = Infinity;
+      
+      for (const candidate of candidates) {
+        const coordString = [
+          `${centerLon},${centerLat}`,
+          ...candidate.waypoints.map((w: [number, number]) => `${w[0]},${w[1]}`),
+          `${centerLon},${centerLat}`
+        ].join(';');
+        
+        try {
+          const response = await fetch(
+            `https://router.project-osrm.org/route/v1/foot/${coordString}?overview=full&geometries=geojson`,
+            { signal: AbortSignal.timeout(8000) }
+          );
+          
+          if (!response.ok) continue;
+          
+          const data = await response.json();
+          if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) continue;
+          
+          const route = data.routes[0];
+          const distanceDiff = Math.abs(route.distance - targetMeters);
+          
+          if (distanceDiff < bestDistanceDiff) {
+            bestDistanceDiff = distanceDiff;
+            bestRoute = {
+              coords: route.geometry.coordinates.map((c: number[]) => [c[0], c[1]] as [number, number]),
+              distance: route.distance,
+            };
+            
+            // If we're within tolerance, stop early
+            if (distanceDiff <= toleranceMeters) break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      if (!bestRoute) {
+        // Fallback - use first candidate without routing
+        const fallbackWaypoints = candidates[0]?.waypoints || [];
         const fallbackCoords: [number, number][] = [
           [centerLon, centerLat],
-          ...waypoints,
+          ...fallbackWaypoints,
           [centerLon, centerLat]
         ];
         
@@ -468,14 +544,13 @@ ${gpxPoints}
         return;
       }
 
-      const route = data.routes[0];
-      const coords = route.geometry.coordinates.map((c: number[]) => [c[0], c[1]] as [number, number]);
+      const coords = bestRoute.coords;
 
       // Calculate familiarity - fixed bounds: new=0-20%, familiar=80-100%
-      let familiarityScore = avoidFamiliar ? 0 : 100; // Default
+      let familiarityScore = avoidFamiliar ? 0 : 100;
       
       if (routes.length > 0) {
-        const allExistingCoords = routes.flatMap(r => r.coordinates);
+        const allExistingCoords = routes.flatMap((r: any) => r.coordinates || []);
         let overlapCount = 0;
         const sampleSize = Math.min(coords.length, 20);
         const step = Math.max(1, Math.floor(coords.length / sampleSize));
@@ -486,35 +561,32 @@ ${gpxPoints}
             const existingLon = existingCoord[0];
             const existingLat = existingCoord[1];
             const dist = Math.sqrt(Math.pow(lon - existingLon, 2) + Math.pow(lat - existingLat, 2));
-            if (dist < 0.005) { // ~500m threshold
+            if (dist < 0.005) {
               overlapCount++;
               break;
             }
           }
         }
-        // Apply familiarity bounds
         const actualOverlap = Math.round((overlapCount / sampleSize) * 100);
         if (avoidFamiliar) {
-          // New routes: 0-20% familiar
           familiarityScore = Math.min(20, actualOverlap);
         } else {
-          // Familiar routes: 80-100% familiar
           familiarityScore = Math.max(80, actualOverlap);
         }
       }
       
       const routeNames = ['Morning Loop', 'Evening Run', 'Park Circuit', 'Urban Loop', 'Nature Trail', 'City Route', 'Sunset Run', 'Quick Loop'];
+      const actualDistanceKm = (bestRoute.distance / 1000).toFixed(1);
       
       setSuggestedRoute({
         coordinates: coords,
-        distance: route.distance,
+        distance: bestRoute.distance,
         elevationGain: Math.round(suggestDistance * 10),
-        name: `${routeNames[Math.floor(Math.random() * routeNames.length)]} - ${suggestDistance}km`,
+        name: `${routeNames[Math.floor(Math.random() * routeNames.length)]} - ${actualDistanceKm}km`,
         isRoundTrip: true,
         startPoint: [centerLon, centerLat],
         familiarityScore,
       });
-      setShowSuggestPanel(false);
       setIsSelectingStartPoint(false);
     } catch (error: any) {
       console.error('Suggestion error:', error);
