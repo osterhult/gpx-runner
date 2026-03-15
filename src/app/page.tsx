@@ -385,39 +385,23 @@ ${gpxPoints}
     URL.revokeObjectURL(url);
   };
 
-  // Helper: Calculate destination point given start, bearing, and distance
-function destinationPoint(lat: number, lng: number, bearingDeg: number, distanceMeters: number): [number, number] {
-  const R = 6371000; // Earth radius in meters
-  const brng = (bearingDeg * Math.PI) / 180;
-  const lat1 = (lat * Math.PI) / 180;
-  const lng1 = (lng * Math.PI) / 180;
-  const d = distanceMeters / R;
-
-  const lat2 = Math.asin(
-    Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(brng)
-  );
-  const lng2 = lng1 + Math.atan2(
-    Math.sin(brng) * Math.sin(d) * Math.cos(lat1),
-    Math.cos(d) - Math.sin(lat1) * Math.sin(lat2)
-  );
-
-  return [(lng2 * 180) / Math.PI, (lat2 * 180) / Math.PI];
-}
 
 const getSuggestion = async () => {
     setIsSuggesting(true);
+    setApiKeyMissing(false);
+
     try {
       let centerLat: number;
       let centerLon: number;
 
       if (selectedStartPoint) {
-        centerLon = selectedStartPoint[0];
         centerLat = selectedStartPoint[1];
+        centerLon = selectedStartPoint[0];
       } else if (routes.length > 0) {
-        const allCoords = routes.flatMap(r => r.coordinates || []);
-        if (allCoords.length > 0 && Array.isArray(allCoords[0])) {
-          centerLat = allCoords.reduce((sum: number, c: any) => sum + (Array.isArray(c) ? c[1] : 0), 0) / allCoords.length;
-          centerLon = allCoords.reduce((sum: number, c: any) => sum + (Array.isArray(c) ? c[0] : 0), 0) / allCoords.length;
+        const allCoords = routes.flatMap((r) => r.coordinates || []);
+        if (allCoords.length > 0) {
+          centerLat = allCoords.reduce((sum, c) => sum + c[1], 0) / allCoords.length;
+          centerLon = allCoords.reduce((sum, c) => sum + c[0], 0) / allCoords.length;
         } else {
           centerLat = 59.3293;
           centerLon = 18.0686;
@@ -427,15 +411,15 @@ const getSuggestion = async () => {
         centerLon = 18.0686;
       }
 
-      const response = await fetch('/api/routes/suggest', {
+      const response = await fetch('/api/generate-route', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          distance: suggestDistance,
-          avoidFamiliar,
-          centerLat,
-          centerLon,
-          existingRoutes: routes.map((route) => ({ coordinates: route.coordinates || [] })),
+          start: { lat: centerLat, lng: centerLon },
+          targetDistanceKm: suggestDistance,
+          toleranceKm: 1,
+          familiarityMode: avoidFamiliar ? 'new' : 'familiar',
+          familiarityTracks: routes.map((route) => route.coordinates),
         }),
       });
 
@@ -444,16 +428,22 @@ const getSuggestion = async () => {
         throw new Error(data?.error || 'Failed to generate route');
       }
 
+      const bestRoute = data?.routes?.[0];
+      if (!bestRoute || !Array.isArray(bestRoute.coordinates) || bestRoute.coordinates.length < 8) {
+        throw new Error('No valid road/trail loop was returned.');
+      }
+
       setSuggestedRoute({
-        coordinates: data.coordinates,
-        distance: data.distance,
-        elevationGain: data.elevationGain,
-        name: data.name,
+        coordinates: bestRoute.coordinates,
+        distance: bestRoute.distance,
+        elevationGain: bestRoute.elevationGain ?? 0,
+        name: bestRoute.name,
         isRoundTrip: true,
-        startPoint: data.startPoint,
-        familiarityScore: data.familiarityScore,
+        startPoint: bestRoute.startPoint ?? [centerLon, centerLat],
+        familiarityScore: bestRoute.familiarityScore,
+        score: bestRoute.score,
+        debug: bestRoute.debug,
       });
-      setSelectedRoute(null);
       setIsSelectingStartPoint(false);
     } catch (error: any) {
       console.error('Suggestion error:', error);

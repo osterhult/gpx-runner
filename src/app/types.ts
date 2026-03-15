@@ -40,4 +40,6 @@ export interface RouteSuggestion {
   startPoint?: [number, number]; // [lon, lat]
   isRoundTrip?: boolean;
   familiarityScore?: number; // 0-100 percentage
+  score?: number;
+  debug?: Record<string, unknown>;
 }
