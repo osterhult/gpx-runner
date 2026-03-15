@@ -548,7 +548,8 @@ ${gpxPoints}
 
   const getDisplayRoutes = () => {
     if (suggestedRoute) return [];
-    return filteredRoutes;
+    // Filter out routes with invalid/empty coordinates to prevent map rendering crash
+    return filteredRoutes.filter(r => r.coordinates && r.coordinates.length > 0 && Array.isArray(r.coordinates[0]));
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -1037,7 +1038,7 @@ ${gpxPoints}
           )}
           
           <div className={`flex-1 h-[50vh] md:h-auto ${darkMode ? 'bg-zinc-900' : 'bg-gray-200'} border ${darkMode ? 'border-zinc-800' : 'border-gray-300'} rounded-2xl overflow-hidden`}>
-            {routes.length > 0 || suggestedRoute ? (
+            {routes.length > 0 || (suggestedRoute && suggestedRoute.coordinates?.length > 0) ? (
               <MapWithNoSSR
                 routes={suggestedRoute ? [] : getDisplayRoutes()}
                 selectedRoute={selectedRoute}
