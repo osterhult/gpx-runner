@@ -486,11 +486,12 @@ const getSuggestion = async () => {
         [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
       }
       
-      // Try each candidate and track best one
+      // Try each candidate - now using OpenRouteService API via internal route
       let bestRoute: any = null;
       let bestDistanceDiff = Infinity;
       
-      for (const candidate of candidates) {
+      // Test candidates with OpenRouteService
+      for (const candidate of candidates.slice(0, 30)) {
         const coordString = [
           `${centerLon},${centerLat}`,
           ...candidate.waypoints.map((w: [number, number]) => `${w[0]},${w[1]}`),
@@ -498,28 +499,35 @@ const getSuggestion = async () => {
         ].join(';');
         
         try {
-          const response = await fetch(
-            `https://router.project-osrm.org/route/v1/foot/${coordString}?overview=full&geometries=geojson`,
-            { signal: AbortSignal.timeout(8000) }
+          // Use OpenRouteService API
+          const orsResponse = await fetch(
+            `https://api.openrouteservice.org/v2/directions/foot-walking/geojson`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                coordinates: coordString.split(';').map(c => c.split(','))
+              }),
+              signal: AbortSignal.timeout(8000)
+            }
           );
           
-          if (!response.ok) continue;
+          if (!orsResponse.ok) continue;
           
-          const data = await response.json();
-          if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) continue;
-          
-          const route = data.routes[0];
-          const distanceDiff = Math.abs(route.distance - targetMeters);
-          
-          if (distanceDiff < bestDistanceDiff) {
-            bestDistanceDiff = distanceDiff;
-            bestRoute = {
-              coords: route.geometry.coordinates.map((c: number[]) => [c[0], c[1]] as [number, number]),
-              distance: route.distance,
-            };
+          const data = await orsResponse.json();
+          if (data.features?.[0]?.properties?.summary?.distance) {
+            const route = data.features[0];
+            const distance = route.properties.summary.distance;
+            const coords = route.geometry.coordinates.map((c: number[]) => [c[0], c[1]] as [number, number]);
+            const distanceDiff = Math.abs(distance - targetMeters);
             
-            // If we're within tolerance, stop early
-            if (distanceDiff <= toleranceMeters) break;
+            if (distanceDiff < bestDistanceDiff) {
+              bestDistanceDiff = distanceDiff;
+              bestRoute = { coords, distance };
+              if (distanceDiff <= toleranceMeters) break;
+            }
           }
         } catch (e) {
           continue;

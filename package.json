@@ -14,6 +14,7 @@
     "@types/leaflet": "^1.9.21",
     "@types/leaflet.wms": "^0.2.4",
     "axios": "^1.13.6",
+    "fast-xml-parser": "^5.5.5",
     "firebase": "^12.10.0",
     "leaflet": "^1.9.4",
     "next": "14.2.35",
