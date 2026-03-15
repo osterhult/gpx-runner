@@ -412,7 +412,7 @@ ${gpxPoints}
       
       // Calculate initial waypoint distance - aim for half the target (out and back)
       // Divide by 1.3 to account for road overhead
-      let waypointDistKm = targetMeters / 1000 / 2 / 1.3;
+      let waypointDistKm = (targetMeters / 1000) / (3 * 1.4);
       const radiusDegrees = waypointDistKm / 111;
       
       // Generate 3 waypoints at 120-degree intervals (forming a triangle/circle)
@@ -917,7 +917,8 @@ ${gpxPoints}
             </div>
           )}
 
-          {/* Routes List - with its own scrollbar */}
+          {/* Routes List - hidden when suggesting routes */}
+          {!showSuggestPanel && (
           <div className={`rounded-2xl overflow-hidden ${darkMode ? 'bg-zinc-900/50 border border-zinc-800' : 'bg-white border border-gray-200'}`}>
             <div className={`p-4 flex items-center justify-between ${darkMode ? 'border-zinc-800' : 'border-gray-200'}`} style={{ borderBottomWidth: 1 }}>
               <h2 className="font-medium">Your Routes</h2>
@@ -976,6 +977,7 @@ ${gpxPoints}
             )}
           </div>
 
+          )}
           {/* Toggle Heatmap */}
           {routes.length > 0 && (
             <button
