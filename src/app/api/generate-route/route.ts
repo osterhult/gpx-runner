@@ -1,4 +1,4 @@
-import { generateTrainingRoutes } from "../../../src/api/routeGeneratorService";
+import { generateTrainingRoutes } from "../../../../src/api/routeGeneratorService";
 
 type RequestBody = {
   start?: { lat?: number; lng?: number };
