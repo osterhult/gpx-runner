@@ -11,7 +11,7 @@ import {
   scoreRoute,
 } from "./scoring/quality";
 import { canonicalPointKey, normalizeLoop, toSegments } from "./utils/geo";
-import { GenerateRouteInput, GeneratedRoute, RouteProvider } from "../types";
+import { GenerateRouteInput, GeneratedRoute, LatLng, RouteProvider } from "../types";
 
 export async function generateRoutes(
   provider: RouteProvider,
@@ -25,19 +25,21 @@ export async function generateRoutes(
   const toleranceMeters = toleranceKm * 1000;
   const targetFamiliarityRange = familiarityRangeForMode(familiarityMode);
 
-  const parsedTracks = (input.gpxFiles ?? [])
+  const parsedTracksFromGpx = (input.gpxFiles ?? [])
     .map((gpx) => parseGpxToTrackPoints(gpx))
     .filter((track) => track.length >= 2);
+
+  const directTracks = (input.routeCollections ?? []).filter((track) => track.length >= 2);
+  const parsedTracks = [...directTracks, ...parsedTracksFromGpx];
   const familiarityIndex = buildFamiliarityIndex(parsedTracks);
   const familiarGraph = buildFamiliarGraph(parsedTracks, input.start);
 
   const accepted: GeneratedRoute[] = [];
-  const nearMisses: GeneratedRoute[] = [];
   let rejectedCount = 0;
 
   const graphLoops =
     familiarityMode !== "new" && parsedTracks.length > 0
-      ? findGraphLoops(familiarGraph, targetMeters, toleranceMeters, Math.max(8, alternatives * 4))
+      ? findGraphLoops(familiarGraph, targetMeters, toleranceMeters, Math.max(10, alternatives * 5))
       : [];
 
   for (const geometry of graphLoops) {
@@ -53,7 +55,6 @@ export async function generateRoutes(
     });
 
     if (built.decision === "accept") accepted.push(built.route);
-    else if (built.decision === "near") nearMisses.push(built.route);
     else rejectedCount += 1;
   }
 
@@ -80,28 +81,15 @@ export async function generateRoutes(
     });
 
     if (built.decision === "accept") accepted.push(built.route);
-    else if (built.decision === "near") nearMisses.push(built.route);
     else rejectedCount += 1;
   }
 
   const bestAccepted = dedupeRoutes(accepted).sort((a, b) => b.score - a.score);
-  if (bestAccepted.length >= alternatives) {
-    return { routes: bestAccepted.slice(0, alternatives), rejectedCount };
-  }
-
-  const fallback = dedupeRoutes(nearMisses)
-    .filter((candidate) => !bestAccepted.some((acceptedRoute) => geometrySimilarity(candidate.geometry, acceptedRoute.geometry) >= 0.72))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, Math.max(0, alternatives - bestAccepted.length));
-
-  return {
-    routes: [...bestAccepted, ...fallback],
-    rejectedCount,
-  };
+  return { routes: bestAccepted.slice(0, alternatives), rejectedCount };
 }
 
 function evaluateBuiltRoute(params: {
-  geometry: GenerateRouteInput["start"][];
+  geometry: LatLng[];
   distanceMeters: number;
   source: GeneratedRoute["source"];
   seed: string;
@@ -109,7 +97,7 @@ function evaluateBuiltRoute(params: {
   familiarityIndex: ReturnType<typeof buildFamiliarityIndex>;
   targetMeters: number;
   targetFamiliarityRange: { min: number; max: number };
-}): { route: GeneratedRoute; decision: "accept" | "near" | "reject" } {
+}): { route: GeneratedRoute; decision: "accept" | "reject" } {
   const toleranceMeters = (params.input.toleranceKm ?? 1) * 1000;
   const loopGeometry = normalizeLoop(params.geometry);
   const segments = toSegments(loopGeometry);
@@ -137,11 +125,12 @@ function evaluateBuiltRoute(params: {
     (familiarityRatio >= params.targetFamiliarityRange.min && familiarityRatio <= params.targetFamiliarityRange.max);
 
   const loopOk =
-    outAndBackRatio <= 0.18 &&
-    closureErrorMeters <= 35 &&
-    loopMetrics.angularCoverage >= 0.62 &&
-    loopMetrics.minRadiusRatio >= 0.38 &&
-    loopMetrics.centerCrossPenalty <= 0.2;
+    outAndBackRatio <= 0.2 &&
+    closureErrorMeters <= 50 &&
+    loopMetrics.angularCoverage >= 0.68 &&
+    loopMetrics.minRadiusRatio >= 0.42 &&
+    loopMetrics.centerCrossPenalty <= 0.18 &&
+    loopMetrics.maxRadiusRatio <= 1.9;
 
   const { score, debug } = scoreRoute({
     distanceMeters: params.distanceMeters,
@@ -176,14 +165,6 @@ function evaluateBuiltRoute(params: {
   };
 
   if (distanceOk && familiarityOk && loopOk) return { route, decision: "accept" };
-  if (
-    distanceDelta <= toleranceMeters * 1.2 &&
-    outAndBackRatio <= 0.28 &&
-    loopMetrics.angularCoverage >= 0.55 &&
-    loopMetrics.centerCrossPenalty <= 0.28
-  ) {
-    return { route, decision: "near" };
-  }
   return { route, decision: "reject" };
 }
 
@@ -203,7 +184,7 @@ function dedupeRoutes(routes: GeneratedRoute[]): GeneratedRoute[] {
   return kept;
 }
 
-function geometrySimilarity(a: GenerateRouteInput["start"][], b: GenerateRouteInput["start"][]): number {
+function geometrySimilarity(a: LatLng[], b: LatLng[]): number {
   const sigA = new Set(a.map((p) => canonicalPointKey(p, 4)));
   const sigB = new Set(b.map((p) => canonicalPointKey(p, 4)));
   let shared = 0;

@@ -1,4 +1,5 @@
 import { generateTrainingRoutes } from "../../../../src/api/routeGeneratorService";
+import type { LatLng } from "../../../../src/types";
 
 type RequestBody = {
   start?: { lat?: number; lng?: number };
@@ -6,7 +7,14 @@ type RequestBody = {
   toleranceKm?: number;
   familiarityMode?: "familiar" | "mixed" | "new";
   gpxFiles?: string[];
+  existingRoutes?: Array<{ coordinates?: [number, number][] }>;
 };
+
+function toLatLngTrack(route?: { coordinates?: [number, number][] }): LatLng[] {
+  return (route?.coordinates ?? [])
+    .filter((point): point is [number, number] => Array.isArray(point) && point.length === 2)
+    .map(([lng, lat]) => ({ lat, lng }));
+}
 
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -26,6 +34,7 @@ export async function POST(request: Request): Promise<Response> {
       toleranceKm: Number.isFinite(body.toleranceKm) ? Number(body.toleranceKm) : 1,
       familiarityMode: body.familiarityMode ?? "mixed",
       gpxFiles: body.gpxFiles ?? [],
+      routeCollections: (body.existingRoutes ?? []).map(toLatLngTrack).filter((track) => track.length >= 2),
       maxCandidates: 180,
       alternatives: 3,
     });
