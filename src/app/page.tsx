@@ -96,16 +96,19 @@ export default function Home() {
         console.log("Loaded", firebaseRoutes.length, "routes from Firebase");
         
         if (firebaseRoutes.length > 0) {
-          // Sort by date (newest first) and don't merge with localStorage
+          // Sort by date (newest first)
           const sortedRoutes = firebaseRoutes.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
           
-          // Deduplicate by route ID
+          // Clear localStorage to avoid stale data
+          localStorage.removeItem("gpx-routes");
+          
+          // Deduplicate by route name + date (more robust than just ID)
           const uniqueRoutes = sortedRoutes.filter((route, index, self) => 
-            index === self.findIndex((r) => r.id === route.id)
+            index === self.findIndex((r) => r.name === route.name && r.date === route.date)
           );
           
           if (uniqueRoutes.length < sortedRoutes.length) {
-            console.log("Removed", sortedRoutes.length - uniqueRoutes.length, "duplicate routes");
+            console.log("Removed", sortedRoutes.length - uniqueRoutes.length, "duplicate routes (by name+date)");
           }
           
           setRoutes(uniqueRoutes);
