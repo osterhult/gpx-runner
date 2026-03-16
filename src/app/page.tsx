@@ -429,53 +429,58 @@ const getSuggestion = async () => {
         centerLon = 18.0686;
       }
 
-      const familiarityMode = avoidFamiliar ? 'new' : 'familiar';
       const response = await fetch('/api/generate-route', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           start: { lat: centerLat, lng: centerLon },
           targetDistanceKm: suggestDistance,
           toleranceKm: 1,
-          familiarityMode,
-          existingRoutes: routes.map((route) => ({ coordinates: route.coordinates })),
+          familiarityMode: avoidFamiliar ? 'new' : 'familiar',
+          gpxFiles: routes.map((route) => {
+            const points = route.coordinates
+              .map(([lon, lat]) => `<trkpt lat="${lat}" lon="${lon}"></trkpt>`)
+              .join('');
+            return `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1"><trk><trkseg>${points}</trkseg></trk></gpx>`;
+          }),
         }),
       });
 
-      const data = await response.json();
+      const payload = await response.json();
 
       if (!response.ok) {
-        if (typeof data?.error === 'string' && data.error.includes('OPENROUTESERVICE_API_KEY')) {
+        if (payload?.error?.includes?.('OPENROUTESERVICE_API_KEY')) {
           setApiKeyMissing(true);
         }
-        throw new Error(data?.error || 'Failed to generate route');
+        throw new Error(payload?.error || 'Failed to generate route');
       }
 
-      const bestRoute = data?.routes?.[0];
+      const bestRoute = payload?.routes?.[0];
       if (!bestRoute || !Array.isArray(bestRoute.geometry) || bestRoute.geometry.length < 2) {
-        throw new Error('No valid road or trail loop found for the chosen settings.');
+        setSuggestedRoute(null);
+        alert('No valid route found for the selected distance and familiarity rules. Try another start point or distance.');
+        return;
       }
 
-      const coords: [number, number][] = bestRoute.geometry.map((point: { lng: number; lat: number }) => [point.lng, point.lat]);
-      const familiarityScore = Math.round((bestRoute.familiarityRatio ?? 0) * 100);
-      const actualDistanceKm = (bestRoute.distanceMeters / 1000).toFixed(1);
-      const routeLabel = familiarityMode === 'new' ? 'New Loop' : 'Familiar Loop';
-
+      const coords: [number, number][] = bestRoute.geometry.map((p: { lat: number; lng: number }) => [p.lng, p.lat]);
       setSuggestedRoute({
         coordinates: coords,
         distance: bestRoute.distanceMeters,
         elevationGain: 0,
-        name: `${routeLabel} - ${actualDistanceKm}km`,
+        name: `${avoidFamiliar ? 'New' : 'Familiar'} Loop - ${(bestRoute.distanceMeters / 1000).toFixed(1)}km`,
         isRoundTrip: true,
         startPoint: [centerLon, centerLat],
-        familiarityScore,
+        familiarityScore: Math.round((bestRoute.familiarityRatio ?? 0) * 100),
       });
       setIsSelectingStartPoint(false);
-    } catch (error: any) {
-      console.error('Suggestion error:', error);
-      alert(error.message || 'Failed to get route suggestion');
+    } catch (error) {
+      console.error('Route generation failed:', error);
+      const message = error instanceof Error ? error.message : 'Failed to generate route';
+      if (message.includes('OPENROUTESERVICE_API_KEY')) {
+        setApiKeyMissing(true);
+      } else {
+        alert('Could not generate a valid loop on roads or trails for this request. Try another start point or distance.');
+      }
     } finally {
       setIsSuggesting(false);
     }
