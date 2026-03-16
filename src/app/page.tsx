@@ -98,8 +98,18 @@ export default function Home() {
         if (firebaseRoutes.length > 0) {
           // Sort by date (newest first) and don't merge with localStorage
           const sortedRoutes = firebaseRoutes.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          setRoutes(sortedRoutes);
-          console.log("Set routes to Firebase routes, sorted by date");
+          
+          // Deduplicate by route ID
+          const uniqueRoutes = sortedRoutes.filter((route, index, self) => 
+            index === self.findIndex((r) => r.id === route.id)
+          );
+          
+          if (uniqueRoutes.length < sortedRoutes.length) {
+            console.log("Removed", sortedRoutes.length - uniqueRoutes.length, "duplicate routes");
+          }
+          
+          setRoutes(uniqueRoutes);
+          console.log("Set routes to unique routes:", uniqueRoutes.length);
         }
       } catch (e) {
         console.error("Failed to load routes from Firebase:", e);
@@ -335,11 +345,21 @@ export default function Home() {
     return colors[Math.floor(Math.random() * colors.length)];
   };
 
-  const deleteRoute = (id: string) => {
+  const deleteRoute = async (id: string) => {
     const updated = routes.filter((r) => r.id !== id);
     saveRoutes(updated);
     if (selectedRoute?.id === id) {
       setSelectedRoute(null);
+    }
+    // Also delete from Firebase
+    if (user && db) {
+      try {
+        const { deleteDoc } = await import("firebase/firestore");
+        await deleteDoc(doc(db, "routes", id));
+        console.log("Deleted route from Firebase:", id);
+      } catch (e) {
+        console.error("Failed to delete from Firebase:", e);
+      }
     }
   };
 
@@ -385,24 +405,6 @@ ${gpxPoints}
     URL.revokeObjectURL(url);
   };
 
-  // Helper: Calculate destination point given start, bearing, and distance
-function destinationPoint(lat: number, lng: number, bearingDeg: number, distanceMeters: number): [number, number] {
-  const R = 6371000; // Earth radius in meters
-  const brng = (bearingDeg * Math.PI) / 180;
-  const lat1 = (lat * Math.PI) / 180;
-  const lng1 = (lng * Math.PI) / 180;
-  const d = distanceMeters / R;
-
-  const lat2 = Math.asin(
-    Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(brng)
-  );
-  const lng2 = lng1 + Math.atan2(
-    Math.sin(brng) * Math.sin(d) * Math.cos(lat1),
-    Math.cos(d) - Math.sin(lat1) * Math.sin(lat2)
-  );
-
-  return [(lng2 * 180) / Math.PI, (lat2 * 180) / Math.PI];
-}
 
 const getSuggestion = async () => {
     setIsSuggesting(true);
@@ -469,8 +471,10 @@ const getSuggestion = async () => {
         elevationGain: 0,
         name: `${routeLabel} - ${actualDistanceKm}km`,
         isRoundTrip: true,
-        startPoint: [centerLon, centerLat],
-        familiarityScore,
+        startPoint: bestRoute.startPoint ?? [centerLon, centerLat],
+        familiarityScore: bestRoute.familiarityScore,
+        score: bestRoute.score,
+        debug: bestRoute.debug,
       });
       setIsSelectingStartPoint(false);
     } catch (error: any) {

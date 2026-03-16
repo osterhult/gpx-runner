@@ -18,7 +18,7 @@ export type GeneratedRoute = {
   segments: RouteSegment[];
   familiarityRatio: number;
   score: number;
-  source?: "familiar-graph" | "provider";
+  source?: "provider" | "familiar-provider";
   debug: Record<string, number | string | boolean>;
 };
 
